@@ -1,0 +1,50 @@
+import { StyleSheet, Text, View } from 'react-native';
+import {
+  GranularSafeAreaView,
+  useGranularSafeAreaMetrics,
+} from 'react-native-granular-safe-areas';
+import { useAvoid } from '../settings';
+
+const SPACING = 40;
+
+/**
+ * A marker every 40 pt down the right edge, each in automatic offset mode. A marker moves left only while something
+ * is beside it, so as the system UI changes (a Live Activity, bars appearing or resizing, rotating, folding) you can
+ * watch exactly which ones move.
+ */
+export function EdgeMarkers() {
+  const metrics = useGranularSafeAreaMetrics();
+  const avoid = useAvoid();
+  const count = Math.floor((metrics?.height ?? 0) / SPACING);
+  return (
+    <View style={styles.overlay}>
+      {Array.from({ length: count }, (_, row) => (
+        <GranularSafeAreaView
+          key={row}
+          mode="offset"
+          edges={['right']}
+          spacing={4}
+          avoid={avoid}
+          style={[styles.marker, { top: row * SPACING + 6 }]}
+        >
+          <Text style={styles.markerText}>◀</Text>
+        </GranularSafeAreaView>
+      ))}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  overlay: { ...StyleSheet.absoluteFill, pointerEvents: 'box-none' },
+  marker: {
+    position: 'absolute',
+    right: 0,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ff2d55',
+  },
+  markerText: { color: '#fff', fontSize: 12 },
+});

@@ -1,0 +1,7 @@
+packages:
+  - example
+
+allowBuilds:
+  '@parcel/watcher': false
+
+nodeLinker: hoisted

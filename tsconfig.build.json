@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig",
+  "compilerOptions": {
+    "types": []
+  },
+  "exclude": [
+    "example",
+    "lib",
+    "**/__tests__"
+  ]
+}
