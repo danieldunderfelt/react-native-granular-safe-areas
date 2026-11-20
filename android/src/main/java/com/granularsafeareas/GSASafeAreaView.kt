@@ -30,6 +30,11 @@ class GSASafeAreaView(context: ThemedReactContext) : ReactViewGroup(context) {
       val frame: RectF,
       /** 0 for a floating region, then 1 top, 2 right, 3 bottom, 4 left. */
       val edge: Int,
+      /**
+       * For a region in a corner (iPad window controls): the other edge it hugs, coded like [edge], or 0. A view moves
+       * away from it instead of [edge] when moving away from [edge] would take more than half of the view.
+       */
+      val side: Int,
       /** The view that draws it (an accessory), or 0 for system UI. */
       val owner: Int,
       /** A whole inset band. */
@@ -391,9 +396,26 @@ class GSASafeAreaView(context: ThemedReactContext) : ReactViewGroup(context) {
       need[2] = el.bottom - f.top
       need[3] = f.right - el.left
       var best = -1
-      for (i in 0 until 4) {
-        if ((region.edge != 0 && region.edge != i + 1) || edges and (1 shl i) == 0) continue
-        if (best < 0 || need[i] < need[best]) best = i
+      if (region.side != 0 && region.edge != 0) {
+        // A corner region: away from its edge, unless that takes more than half of the view; then away from its side.
+        val e = region.edge - 1
+        val side = region.side - 1
+        val size = if (e == 0 || e == 2) el.height() else el.width()
+        val edgeAllowed = edges and (1 shl e) != 0
+        // A scrolling edge isn't a way out: the scroll view's content inset handles it.
+        val sideAllowed = edges and (1 shl side) != 0 && ignored and (1 shl side) == 0
+        best =
+            when {
+              edgeAllowed && need[e] <= size / 2 -> e
+              sideAllowed -> side
+              edgeAllowed -> e
+              else -> -1
+            }
+      } else {
+        for (i in 0 until 4) {
+          if ((region.edge != 0 && region.edge != i + 1) || edges and (1 shl i) == 0) continue
+          if (best < 0 || need[i] < need[best]) best = i
+        }
       }
       when (best) {
         0 -> out.top = max(out.top, need[0])
@@ -500,6 +522,7 @@ class GSASafeAreaView(context: ThemedReactContext) : ReactViewGroup(context) {
                     y + PixelUtil.toPixelFromDIP(map.getDouble("height")),
                 ),
             edge = if (map.hasKey("edge")) map.getInt("edge") else 0,
+            side = if (map.hasKey("side")) map.getInt("side") else 0,
             owner = if (map.hasKey("owner")) map.getInt("owner") else 0,
             band = map.hasKey("band") && map.getBoolean("band"),
         )

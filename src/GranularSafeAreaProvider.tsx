@@ -162,11 +162,11 @@ export function GranularSafeAreaProvider({
   }, [mock, nativeMetrics, layout, isNested, safeAreaInsets, safeAreaFrame]);
 
   const regions = useMemo(
-    () => (metrics ? buildRegions(metrics, { refine: granular }) : []),
+    () => (metrics ? buildRegions(metrics, { granular: granular }) : []),
     [metrics, granular]
   );
   const bands = useMemo(
-    () => (metrics ? buildRegions(metrics, { refine: false }) : []),
+    () => (metrics ? buildRegions(metrics, { granular: false }) : []),
     [metrics]
   );
 

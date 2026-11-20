@@ -419,7 +419,7 @@ function NativeBackedSafeAreaView({
   );
 }
 
-/** The web, and Android for now: measured from JS. */
+/** The web: measured from JS. */
 function MeasuredSafeAreaView({
   edges,
   mode = 'padding',

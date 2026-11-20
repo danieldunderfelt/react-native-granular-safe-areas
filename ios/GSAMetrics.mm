@@ -66,16 +66,61 @@ static NSString *_Nullable GSAVerticalBarEdgeName(UITraitCollection *traits)
   return nil;
 }
 
-/// The status bar frame in `view`'s coordinates, or nil when it's hidden.
+/// The status bar frame in `view`'s coordinates, or nil when it's hidden or not over the window.
 static NSValue *_Nullable GSAStatusBarFrame(UIView *view)
 {
-  UIWindowScene *scene = GSAWindowOf(view).windowScene;
+  UIWindow *window = GSAWindowOf(view);
+  UIWindowScene *scene = window.windowScene;
   UIStatusBarManager *manager = scene.statusBarManager;
   if (manager == nil || manager.isStatusBarHidden || CGRectIsEmpty(manager.statusBarFrame)) {
     return nil;
   }
+  // The status bar runs along the top of the screen. For an iPad window that doesn't fill the screen, UIKit reports
+  // it at the top of the window as if the window were the screen, so it's clipped to where the window really is.
+  UIScreen *screen = scene.screen;
+  if (screen != nil) {
+    CGRect bar = [screen.coordinateSpace convertRect:manager.statusBarFrame fromCoordinateSpace:scene.coordinateSpace];
+    CGRect windowInScreen = [window convertRect:window.bounds toCoordinateSpace:screen.coordinateSpace];
+    if (!CGRectEqualToRect(windowInScreen, screen.bounds)) {
+      bar = CGRectIntersection(
+          CGRectMake(0, 0, CGRectGetWidth(screen.bounds), CGRectGetHeight(manager.statusBarFrame)), windowInScreen);
+      if (CGRectIsEmpty(bar)) {
+        return nil;
+      }
+    }
+    return [NSValue valueWithCGRect:[view convertRect:bar fromCoordinateSpace:screen.coordinateSpace]];
+  }
   return [NSValue valueWithCGRect:[view convertRect:manager.statusBarFrame fromCoordinateSpace:scene.coordinateSpace]];
 }
+
+#if GSA_HAS_IOS_26_SDK
+/// The window controls (close, minimize, arrange) of an iPad window that doesn't fill the screen, in `view`'s
+/// coordinates, with the system's margins around them, or nil. UIKit only tells where they are through the
+/// corner-adapted safe area: a header level with them has to start past them (the horizontal adaptation), anything
+/// beside them below them (the vertical one). The display's and the window's rounded corners adapt it too, but
+/// evenly on both sides, so only a top corner that sticks out further than the other one holds controls.
+API_AVAILABLE(ios(26.0))
+static NSDictionary *_Nullable GSAWindowControls(UIView *view, UIEdgeInsets insets)
+{
+  if (view.traitCollection.userInterfaceIdiom != UIUserInterfaceIdiomPad) {
+    return nil;
+  }
+  UIEdgeInsets vertical = [view
+      edgeInsetsForLayoutRegion:[UIViewLayoutRegion
+                                    safeAreaLayoutRegionWithCornerAdaptation:UIViewLayoutRegionAdaptivityAxisVertical]];
+  UIEdgeInsets horizontal = [view
+      edgeInsetsForLayoutRegion:[UIViewLayoutRegion
+                                    safeAreaLayoutRegionWithCornerAdaptation:UIViewLayoutRegionAdaptivityAxisHorizontal]];
+  CGFloat left = horizontal.left - insets.left;
+  CGFloat right = horizontal.right - insets.right;
+  if (vertical.top <= insets.top + 1 || fabs(left - right) <= 1) {
+    return nil;
+  }
+  CGFloat width = left > right ? horizontal.left : horizontal.right;
+  CGFloat x = left > right ? 0 : view.bounds.size.width - width;
+  return GSARect(CGRectMake(x, 0, width, vertical.top));
+}
+#endif
 
 /// Standard UIKit bars, plus private vertical bar containers matched by name. The Phase 0 probe output decides
 /// whether the name match is needed; see `viewsNearEdges` in the diagnostics.
@@ -293,6 +338,15 @@ NSDictionary *_Nullable GSAMetricsForView(UIView *view, GSAWindowBars *_Nullable
   if (statusBar != nil) {
     metrics[@"statusBar"] = GSARect(statusBar.CGRectValue);
   }
+
+#if GSA_HAS_IOS_26_SDK
+  if (@available(iOS 26.0, *)) {
+    NSDictionary *windowControls = GSAWindowControls(view, insets);
+    if (windowControls != nil) {
+      metrics[@"windowControls"] = windowControls;
+    }
+  }
+#endif
 
 #if GSA_HAS_IOS_27_1_SDK
   if (@available(iOS 27.1, *)) {

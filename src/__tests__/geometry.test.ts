@@ -57,7 +57,7 @@ describe('buildRegions', () => {
   });
 
   it('keeps whole bands when refinement is off', () => {
-    expect(buildRegions(duoTabs, { refine: false })).toEqual([
+    expect(buildRegions(duoTabs, { granular: false })).toEqual([
       {
         kind: 'inset',
         edge: 'right',
@@ -377,7 +377,7 @@ describe('computeElementInsets with floating regions', () => {
 
 describe('safeAreaViewInsets', () => {
   const regions = buildRegions(duoTabs);
-  const bands = buildRegions(duoTabs, { refine: false });
+  const bands = buildRegions(duoTabs, { granular: false });
   const view = (
     element: Rect,
     options: Partial<Parameters<typeof safeAreaViewInsets>[1]> = {}
@@ -407,7 +407,7 @@ describe('safeAreaViewInsets', () => {
       const button = { x: 300, y: 70, width: 90, height: 36 };
       const insets = safeAreaViewInsets(button, {
         regions: buildRegions(metrics),
-        bands: buildRegions(metrics, { refine: false }),
+        bands: buildRegions(metrics, { granular: false }),
         bounds: { width: 402, height: 874 },
       });
       expect(insets.top).toBe(116 - 70);
@@ -495,7 +495,10 @@ describe('what covers a view', () => {
     owner: -1,
   };
   const phoneRegions = [...buildRegions(phone), boardingPass];
-  const phoneBands = [...buildRegions(phone, { refine: false }), boardingPass];
+  const phoneBands = [
+    ...buildRegions(phone, { granular: false }),
+    boardingPass,
+  ];
   const phoneBounds = { width: 402, height: 874 };
   const onPhone = (
     element: Rect,
@@ -544,7 +547,7 @@ describe('what covers a view', () => {
       systemBars: duoTabs.systemBars.map((bar) => ({ ...bar, owner: 7 })),
     };
     const regions = buildRegions(duoWithTabs);
-    const bands = buildRegions(duoWithTabs, { refine: false });
+    const bands = buildRegions(duoWithTabs, { granular: false });
     const onDuo = (
       element: Rect,
       options: Partial<Parameters<typeof safeAreaViewInsets>[1]> = {}
@@ -594,7 +597,7 @@ describe('what covers a view', () => {
 
     it('sweeps scrolling content over its scroll view, not the whole screen', () => {
       const regions = buildRegions(duo);
-      const bands = buildRegions(duo, { refine: false });
+      const bands = buildRegions(duo, { granular: false });
       const item = { x: 16, y: 300, width: 434, height: 40 };
       const inside = (visible: Rect) =>
         safeAreaViewInsets(item, {
@@ -619,13 +622,23 @@ describe('the native side', () => {
     expect(
       trackedRegions(regions, { avoid: ['status', 'controls'], spacing: 4 })
     ).toEqual([
-      { x: 378, y: -4, width: 92, height: 182, edge: 2, owner: 0, band: false },
+      {
+        x: 378,
+        y: -4,
+        width: 92,
+        height: 182,
+        edge: 2,
+        side: 0,
+        owner: 0,
+        band: false,
+      },
       {
         x: 378,
         y: 488,
         width: 92,
         height: 170,
         edge: 2,
+        side: 0,
         owner: 0,
         band: false,
       },
@@ -986,5 +999,153 @@ describe('verticalBarBackButtonFrame', () => {
   it('shares the bar with a tab bar further down', () => {
     const bar = getVerticalBar(duoTabs);
     expect(bar && verticalBarBackButtonFrame(bar)).not.toBeNull();
+  });
+});
+
+describe('iPad window controls', () => {
+  const window = fixtures.iPadProWindow;
+  const regions = buildRegions(window);
+  const windowBounds = { width: window.width, height: window.height };
+  const inWindow = (
+    element: Rect,
+    options: Partial<Parameters<typeof computeElementInsets>[2]> = {}
+  ) =>
+    computeElementInsets(element, regions, {
+      bounds: windowBounds,
+      ...options,
+    });
+  const zero = { top: 0, right: 0, bottom: 0, left: 0 };
+
+  it('become a controls region in the top-left corner', () => {
+    expect(regions).toContainEqual({
+      kind: 'controls',
+      edge: 'top',
+      side: 'left',
+      frame: { x: 0, y: 0, width: 66, height: 53 },
+    });
+  });
+
+  it("aren't over the app when the window fills the screen", () => {
+    expect(buildRegions(fixtures.iPadProFullScreen).map((r) => r.kind)).toEqual(
+      ['inset', 'inset']
+    );
+  });
+
+  it('are on the right when the window reports them there', () => {
+    const rtl = buildRegions({
+      ...window,
+      windowControls: { x: 309, y: 0, width: 66, height: 53 },
+    });
+    expect(rtl).toContainEqual(
+      expect.objectContaining({ edge: 'top', side: 'right' })
+    );
+  });
+
+  it('move a header level with them over, as a toolbar does', () => {
+    expect(inWindow({ x: 0, y: 0, width: 375, height: 64 })).toEqual({
+      ...zero,
+      top: 10,
+      left: 66,
+    });
+  });
+
+  it('move a button level with them over, out of their way', () => {
+    expect(inWindow({ x: 16, y: 16, width: 44, height: 44 })).toEqual({
+      ...zero,
+      left: 50,
+    });
+  });
+
+  it('move a whole screen or a sidebar below them', () => {
+    expect(inWindow({ x: 0, y: 0, width: 375, height: 617 })).toEqual({
+      ...zero,
+      top: 53,
+      bottom: 10,
+    });
+    expect(inWindow({ x: 0, y: 0, width: 250, height: 617 })).toEqual({
+      ...zero,
+      top: 53,
+      bottom: 10,
+    });
+  });
+
+  it('move an element below them when it may not move sideways', () => {
+    expect(
+      inWindow(
+        { x: 0, y: 0, width: 375, height: 64 },
+        { edges: ['top', 'right', 'bottom'] }
+      )
+    ).toEqual({ ...zero, top: 53 });
+  });
+
+  it('move an element sideways when it may not move down', () => {
+    expect(
+      inWindow(
+        { x: 0, y: 0, width: 375, height: 617 },
+        { edges: ['left', 'right', 'bottom'] }
+      )
+    ).toEqual({ ...zero, left: 66, bottom: 10 });
+  });
+
+  it('are left to the content inset in a vertical scroll view', () => {
+    expect(
+      safeAreaViewInsets(
+        { x: 0, y: 0, width: 375, height: 64 },
+        {
+          regions,
+          bands: buildRegions(window, { granular: false }),
+          dynamic: true,
+          scroll: { vertical: true, horizontal: false },
+          bounds: windowBounds,
+        }
+      )
+    ).toEqual(zero);
+  });
+
+  it('only move content down in a horizontal scroll view', () => {
+    expect(
+      safeAreaViewInsets(
+        { x: 0, y: 0, width: 200, height: 64 },
+        {
+          regions,
+          bands: buildRegions(window, { granular: false }),
+          dynamic: true,
+          scroll: { vertical: false, horizontal: true },
+          bounds: windowBounds,
+        }
+      )
+    ).toEqual({ ...zero, top: 53 });
+  });
+
+  it('reach the native side with their side', () => {
+    expect(trackedRegions(regions, {})).toContainEqual({
+      x: 0,
+      y: 0,
+      width: 66,
+      height: 53,
+      edge: 1,
+      side: 4,
+      owner: 0,
+      band: false,
+    });
+  });
+
+  it('move with a provider that starts inside the window', () => {
+    const sub = metricsForSubrect(window, {
+      x: 20,
+      y: 0,
+      width: 355,
+      height: 617,
+    });
+    expect(sub.windowControls).toEqual({ x: -20, y: 0, width: 66, height: 53 });
+  });
+
+  it('survive parsing', () => {
+    expect(parseMetrics(JSON.stringify(window))?.windowControls).toEqual(
+      window.windowControls
+    );
+    expect(
+      parseMetrics(JSON.stringify(fixtures.iPadProFullScreen))?.windowControls
+    ).toBeUndefined();
   });
 });

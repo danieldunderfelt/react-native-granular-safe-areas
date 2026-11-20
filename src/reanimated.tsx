@@ -214,7 +214,7 @@ function NativeAnimatedSafeAreaView({
   );
 }
 
-/** The web, and Android for now: the view measures itself from JS and hands the insets to Reanimated. */
+/** The web: the view measures itself from JS and hands the insets to Reanimated. */
 function MeasuredAnimatedSafeAreaView({
   mode = 'padding',
   transition,

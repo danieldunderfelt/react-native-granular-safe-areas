@@ -114,6 +114,8 @@ export function parseMetrics(json: string | null | undefined) {
     barItemsKnown: data.barItemsKnown === true,
     reservedRegionsSupported: data.reservedRegionsSupported === true,
   };
+  const windowControls = parseRect(data.windowControls);
+  if (windowControls) metrics.windowControls = windowControls;
   const android = parseAndroid(data.android);
   if (android) metrics.android = android;
   return metrics;

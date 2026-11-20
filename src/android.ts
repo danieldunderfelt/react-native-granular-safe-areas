@@ -163,7 +163,7 @@ function refineBand(
  */
 export function buildAndroidRegions(
   metrics: GranularSafeAreaMetrics,
-  { refine = true }: BuildRegionsOptions = {}
+  { granular = true }: BuildRegionsOptions = {}
 ): SafeAreaRegion[] {
   const { width, height, insets } = metrics;
   const regions: SafeAreaRegion[] = [];
@@ -172,7 +172,7 @@ export function buildAndroidRegions(
     if (size <= 0) continue;
     const band = bandRect(edge, size, width, height);
     regions.push(
-      ...((refine ? refineBand(edge, band, metrics) : null) ?? [
+      ...((granular ? refineBand(edge, band, metrics) : null) ?? [
         { kind: 'inset', edge, frame: band },
       ])
     );

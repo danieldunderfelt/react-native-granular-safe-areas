@@ -27,7 +27,7 @@ describe('GranularSafeAreaStore', () => {
       store.publish(
         buildRegions(duo),
         duo,
-        buildRegions(duo, { refine: false })
+        buildRegions(duo, { granular: false })
       );
       listener.mockClear();
       store.setAccessory(boardingPass.owner, boardingPass);

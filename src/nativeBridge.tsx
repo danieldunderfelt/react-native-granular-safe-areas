@@ -1,14 +1,5 @@
 import type { Ref } from 'react';
-import {
-  Dimensions,
-  Platform,
-  Pressable,
-  StyleSheet,
-  View,
-  type HostInstance,
-  type StyleProp,
-  type ViewStyle,
-} from 'react-native';
+import { Dimensions, Platform, View, type HostInstance } from 'react-native';
 import { initialWindowMetrics } from 'react-native-safe-area-context';
 import { metricsFromInsets, ZERO_INSETS } from './geometry';
 import type { NativeProps as AnchorProps } from './specs/GranularSafeAreaAnchorNativeComponent';
@@ -16,8 +7,8 @@ import type NativeView from './specs/GranularSafeAreaViewNativeComponent';
 import type { EdgeInsets, GranularSafeAreaMetrics, ScrollAxes } from './types';
 import type { NativeProps } from './specs/GranularSafeAreaProviderViewNativeComponent';
 
-// Platforms without native granular metrics yet (web, Android). The provider falls back to the regular insets from
-// react-native-safe-area-context, so everything behaves like a regular safe area.
+// Platforms without a native side: the web, and any other platform React Native runs on. The provider falls back to
+// the regular insets from react-native-safe-area-context, so everything behaves like a regular safe area.
 
 export function NativeProviderView({
   onMetricsChange: _onMetricsChange,
@@ -42,76 +33,12 @@ export function AnchorView({
 /** Whether the system back button is drawn natively, in its own screen. Elsewhere the provider draws a stand-in. */
 export const nativeHostsBackButton = false;
 
-/** A stand-in for the native glass button, so mocked layouts (web previews) show it too. */
-export function BackButtonStandIn({
-  systemImage,
-  label,
-  onPress,
-  style,
-}: {
-  systemImage: string;
-  label?: string;
-  onPress: () => unknown;
-  style?: StyleProp<ViewStyle>;
-}) {
-  const close = systemImage === 'xmark';
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      onPress={onPress}
-      style={({ pressed }) => [style, styles.button, pressed && styles.pressed]}
-    >
-      {close ? (
-        <>
-          <View style={[styles.line, styles.lineA]} />
-          <View style={[styles.line, styles.lineB]} />
-        </>
-      ) : (
-        <View style={styles.chevron} />
-      )}
-    </Pressable>
-  );
-}
-
-const styles = StyleSheet.create({
-  button: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 999,
-    backgroundColor: 'rgba(255, 255, 255, 0.75)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(0, 0, 0, 0.15)',
-    shadowColor: '#000',
-    shadowOpacity: 0.12,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-  },
-  pressed: { opacity: 0.6 },
-  chevron: {
-    width: 12,
-    height: 12,
-    marginLeft: 5,
-    borderLeftWidth: 2.5,
-    borderBottomWidth: 2.5,
-    borderColor: '#1c1c1e',
-    transform: [{ rotate: '45deg' }],
-  },
-  line: {
-    position: 'absolute',
-    width: 16,
-    height: 2.5,
-    borderRadius: 2,
-    backgroundColor: '#1c1c1e',
-  },
-  lineA: { transform: [{ rotate: '45deg' }] },
-  lineB: { transform: [{ rotate: '-45deg' }] },
-});
+export { BackButtonStandIn } from './BackButtonStandIn';
 
 /** No native view yet: `SafeAreaView` measures itself from JS. */
 export const NativeSafeAreaView: typeof NativeView | null = null;
 
-/** Whether {@link subscribeToScroll} reports anything: on the web, not on Android. */
+/** Whether {@link subscribeToScroll} reports anything: on the web, not on other platforms without a native side. */
 export const canTrackScrollFromJS = Platform.OS === 'web';
 
 type ScrollTarget = {
@@ -140,7 +67,7 @@ function handleScroll() {
 
 /**
  * Web: calls `listener` once per frame while anything on the page scrolls. One capturing listener on the document
- * serves every subscriber. On Android, scrolling can't be observed from JS, so it never calls it.
+ * serves every subscriber. Elsewhere, scrolling can't be observed from JS, so it never calls it.
  */
 export function subscribeToScroll(listener: () => unknown): () => void {
   const target = (globalThis as { document?: ScrollTarget }).document;
@@ -235,7 +162,7 @@ function webInsets(document: WebDocument, view: WebWindow): EdgeInsets {
 
 /**
  * Follows the app's window, for apps without a provider: its size and regular insets. The web reads the browser's;
- * Android, until it has native support, react-native-safe-area-context's.
+ * other platforms without a native side, react-native-safe-area-context's.
  */
 export function observeWindowMetrics(
   listener: (metrics: GranularSafeAreaMetrics) => void

@@ -150,10 +150,10 @@ export function resolveVerticalBarEdge(
 
 export type BuildRegionsOptions = {
   /**
-   * Break the vertical bar band down into the regions actually inside it. When `false`, every band stays whole and
-   * the regions are the same as a regular safe area. Defaults to `true`.
+   * Break the bands down into the regions actually inside them where the platform allows it, such as the iPhone Duo's
+   * vertical bar band. When `false`, every band stays whole, as in a regular safe area. Defaults to `true`.
    */
-  refine?: boolean;
+  granular?: boolean;
 };
 
 /**
@@ -165,14 +165,14 @@ export type BuildRegionsOptions = {
  */
 export function buildRegions(
   metrics: GranularSafeAreaMetrics,
-  { refine = true }: BuildRegionsOptions = {}
+  { granular = true }: BuildRegionsOptions = {}
 ): SafeAreaRegion[] {
   if (metrics.platform === 'android') {
-    return buildAndroidRegions(metrics, { refine });
+    return buildAndroidRegions(metrics, { granular });
   }
   const { width, height, insets } = metrics;
   const barEdge =
-    refine && metrics.reservedRegionsSupported
+    granular && metrics.reservedRegionsSupported
       ? resolveVerticalBarEdge(metrics)
       : null;
 
@@ -216,6 +216,19 @@ export function buildRegions(
       edge: attachedEdge(frame, width, height, insets),
       frame,
       ...ownerOf(bar),
+    });
+  }
+
+  // The window controls in the top corner of an iPad window. A header level with them moves over; anything taller
+  // moves below them.
+  const controls =
+    metrics.windowControls && intersection(metrics.windowControls, bounds);
+  if (controls && !covered(controls)) {
+    regions.push({
+      kind: 'controls',
+      edge: 'top',
+      side: controls.x + controls.width / 2 <= width / 2 ? 'left' : 'right',
+      frame: controls,
     });
   }
 
@@ -499,38 +512,28 @@ export function metricsForSubrect(
   const dx = -rect.x;
   const dy = -rect.y;
   const move = (r: Rect) => translate(r, dx, dy);
-  const insets: EdgeInsets = {
-    top: Math.max(0, metrics.insets.top - rect.y),
-    left: Math.max(0, metrics.insets.left - rect.x),
-    bottom: Math.max(0, maxY(rect) - (metrics.height - metrics.insets.bottom)),
-    right: Math.max(0, maxX(rect) - (metrics.width - metrics.insets.right)),
-  };
+  // Insets are measured from the larger view's edges: what's left of each inside the sub-rectangle.
+  const shift = (i: EdgeInsets): EdgeInsets => ({
+    top: Math.max(0, i.top - rect.y),
+    left: Math.max(0, i.left - rect.x),
+    bottom: Math.max(0, maxY(rect) - (metrics.height - i.bottom)),
+    right: Math.max(0, maxX(rect) - (metrics.width - i.right)),
+  });
   const clampInsets = (i: EdgeInsets): EdgeInsets => ({
     top: Math.min(i.top, rect.height),
     bottom: Math.min(i.bottom, rect.height),
     left: Math.min(i.left, rect.width),
     right: Math.min(i.right, rect.width),
   });
+  const { android } = metrics;
   return {
     ...metrics,
     width: rect.width,
     height: rect.height,
-    insets: clampInsets(insets),
+    insets: clampInsets(shift(metrics.insets)),
     statusBar: metrics.statusBar ? move(metrics.statusBar) : null,
-    // The bar region is described relative to the window's edges; shift it like the safe-area insets.
     barRegionInsets: metrics.barRegionInsets
-      ? {
-          top: Math.max(0, metrics.barRegionInsets.top - rect.y),
-          left: Math.max(0, metrics.barRegionInsets.left - rect.x),
-          bottom: Math.max(
-            0,
-            maxY(rect) - (metrics.height - metrics.barRegionInsets.bottom)
-          ),
-          right: Math.max(
-            0,
-            maxX(rect) - (metrics.width - metrics.barRegionInsets.right)
-          ),
-        }
+      ? shift(metrics.barRegionInsets)
       : null,
     occlusions: metrics.occlusions.map((o) => ({
       ...move(o),
@@ -538,10 +541,22 @@ export function metricsForSubrect(
     })),
     divisions: metrics.divisions.map((d) => ({ ...move(d), active: d.active })),
     systemBars: metrics.systemBars.map(move),
+    windowControls: metrics.windowControls
+      ? move(metrics.windowControls)
+      : null,
+    ...(android && {
+      android: {
+        ...android,
+        bars: clampInsets(shift(android.bars)),
+        caption: clampInsets(shift(android.caption)),
+        cutout: clampInsets(shift(android.cutout)),
+        corners: android.corners.map(move),
+      },
+    }),
   };
 }
 
-/** Metrics with only regular insets, for platforms that report nothing else (web, Android for now). */
+/** Metrics with only regular insets, for platforms that report nothing else, such as the web. */
 export function metricsFromInsets(
   width: number,
   height: number,
@@ -573,7 +588,15 @@ export function withoutScrollingEdges(
 ): SafeAreaRegion[] {
   const scrollingEdges: readonly Edge[] =
     axis === 'vertical' ? ['top', 'bottom'] : ['left', 'right'];
-  return regions.filter((r) => !(r.edge && scrollingEdges.includes(r.edge)));
+  return regions.flatMap((r) => {
+    if (r.edge && scrollingEdges.includes(r.edge)) return [];
+    if (r.side && scrollingEdges.includes(r.side)) {
+      // A corner region whose other way out is a scrolling edge: the element can only move away from `edge`.
+      const { side: _side, ...rest } = r;
+      return [rest];
+    }
+    return [r];
+  });
 }
 
 /**
@@ -679,11 +702,13 @@ function visibleArea({ bounds, visible }: ElementInsetsOptions): Rect {
 const EMPTY: Rect = Object.freeze({ x: 0, y: 0, width: 0, height: 0 });
 
 /**
- * A region as the native side takes it. `edge`: 0 floating, then 1 top, 2 right, 3 bottom, 4 left. `owner`: the view
- * drawing it, 0 for system UI. `band`: a whole inset band.
+ * A region as the native side takes it. `edge`: 0 floating, then 1 top, 2 right, 3 bottom, 4 left. `side`: the other
+ * edge of a corner region, coded the same way, or 0. `owner`: the view drawing it, 0 for system UI. `band`: a whole
+ * inset band.
  */
 export type TrackedRegion = Rect & {
   edge: number;
+  side: number;
   owner: number;
   band: boolean;
 };
@@ -708,6 +733,7 @@ export function trackedRegions(
     .map((region) => ({
       ...(spacing > 0 ? expand(region.frame, spacing) : rectOf(region.frame)),
       edge: region.edge ? EDGE_CODES[region.edge] : 0,
+      side: region.side ? EDGE_CODES[region.side] : 0,
       owner: region.owner ?? 0,
       band: region.kind === 'inset',
     }));
@@ -832,7 +858,11 @@ export function computeElementInsets(
       bottom: maxY(el) - frame.y,
       left: maxX(frame) - el.x,
     };
-    const candidates = region.edge ? [region.edge] : EDGES;
+    const candidates: readonly Edge[] = !region.edge
+      ? EDGES
+      : region.side
+        ? [cornerExit(region.edge, region.side, el, need, edges)]
+        : [region.edge];
     let best: Edge | null = null;
     for (const edge of candidates) {
       if (!edges.includes(edge)) continue;
@@ -842,6 +872,25 @@ export function computeElementInsets(
     out[best] = Math.max(out[best], need[best]);
   }
   return out;
+}
+
+/**
+ * The way out of a corner region (an iPad window's controls) for an element: away from the region's `edge`, below the
+ * controls, unless that takes more than half of the element's size along that axis or isn't allowed. Then away from
+ * its `side`, past the controls, the way a toolbar's items move over. A header level with the controls moves over; a
+ * whole screen or a sidebar starts below them.
+ */
+function cornerExit(
+  edge: Edge,
+  side: Edge,
+  element: Rect,
+  need: EdgeInsets,
+  edges: readonly Edge[]
+): Edge {
+  const size =
+    edge === 'top' || edge === 'bottom' ? element.height : element.width;
+  const away = edges.includes(edge) && need[edge] <= size / 2;
+  return away || !edges.includes(side) ? edge : side;
 }
 
 /**
@@ -934,6 +983,7 @@ export function regionsEqual(
         other !== undefined &&
         region.kind === other.kind &&
         region.edge === other.edge &&
+        region.side === other.side &&
         region.owner === other.owner &&
         rectsEqual(region.frame, other.frame)
       );

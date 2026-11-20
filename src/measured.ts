@@ -68,7 +68,7 @@ export type MeasuredSafeArea = {
 };
 
 /**
- * `SafeAreaView` where there's no native view (the web, and Android for now): the element measures itself with
+ * `SafeAreaView` where there's no native view (the web): the element measures itself with
  * `getBoundingClientRect` when it mounts, when its layout changes and when the system UI changes. A dynamic one also
  * measures again on every frame something scrolls, where JS can see that (the web, where it's a plain DOM read).
  * Elsewhere a dynamic element behaves like a granular one.

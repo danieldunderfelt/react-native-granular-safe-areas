@@ -162,6 +162,94 @@ const iPhone18ProPortrait: GranularSafeAreaMetrics = {
   reservedRegionsSupported: true,
 };
 
+/**
+ * iPad Pro 11-inch in windowed mode, with the window filling the screen, portrait. The window controls are in the
+ * status bar then, not over the app, so the insets stay whole bands. Recorded on the iPad simulator (iOS 27.0).
+ */
+const iPadProFullScreen: GranularSafeAreaMetrics = {
+  ...base,
+  width: 834,
+  height: 1210,
+  insets: { top: 32, right: 0, bottom: 20, left: 0 },
+  verticalBarEdge: null,
+  statusBar: { x: 0, y: 0, width: 834, height: 32 },
+  reservedRegionsSupported: false,
+};
+
+/**
+ * iPad Pro 11-inch, a window smaller than the screen, in an app without UIKit bars. The window controls are in its
+ * top-left corner, over the app: a header level with them moves over, anything taller moves below them. Recorded on
+ * the iPad simulator (iOS 27.0).
+ */
+const iPadProWindow: GranularSafeAreaMetrics = {
+  ...base,
+  width: 375,
+  height: 617,
+  insets: { top: 10, right: 0, bottom: 10, left: 0 },
+  verticalBarEdge: null,
+  windowControls: { x: 0, y: 0, width: 66, height: 53 },
+  reservedRegionsSupported: false,
+};
+
+const ZERO = { top: 0, right: 0, bottom: 0, left: 0 };
+
+/** Pixel 10, portrait, 3-button navigation. Recorded on the Pixel 10 emulator (Android 17, API 37). */
+const pixel10Portrait: GranularSafeAreaMetrics = {
+  ...base,
+  platform: 'android',
+  width: 411.429,
+  height: 923.429,
+  insets: { top: 54.095, right: 0, bottom: 48, left: 0 },
+  verticalBarEdge: null,
+  statusBar: { x: 0, y: 0, width: 411.429, height: 54.095 },
+  occlusions: [
+    { x: 184.762, y: 0, width: 41.905, height: 54.095, active: true },
+  ],
+  reservedRegionsSupported: false,
+  android: {
+    bars: { top: 54.095, right: 0, bottom: 48, left: 0 },
+    caption: ZERO,
+    cutout: { top: 54.095, right: 0, bottom: 0, left: 0 },
+    captionTransparent: false,
+    corners: [
+      { x: 0, y: 0, width: 50.286, height: 50.286 },
+      { x: 361.143, y: 0, width: 50.286, height: 50.286 },
+      { x: 361.143, y: 873.143, width: 50.286, height: 50.286 },
+      { x: 0, y: 873.143, width: 50.286, height: 50.286 },
+    ],
+  },
+};
+
+/**
+ * Pixel 10 in landscape, the camera on the left: the navigation bar is on the right, so the left band is the display
+ * cutout alone, and only the camera and the rounded corners are avoided there. Recorded on the Pixel 10 emulator.
+ */
+const pixel10Landscape: GranularSafeAreaMetrics = {
+  ...base,
+  platform: 'android',
+  width: 923.429,
+  height: 411.429,
+  insets: { top: 52.19, right: 48, bottom: 0, left: 54.095 },
+  verticalBarEdge: null,
+  statusBar: { x: 0, y: 0, width: 923.429, height: 52.19 },
+  occlusions: [
+    { x: 0, y: 184.762, width: 54.095, height: 41.905, active: true },
+  ],
+  reservedRegionsSupported: false,
+  android: {
+    bars: { top: 52.19, right: 48, bottom: 0, left: 0 },
+    caption: ZERO,
+    cutout: { top: 0, right: 0, bottom: 0, left: 54.095 },
+    captionTransparent: false,
+    corners: [
+      { x: 0, y: 0, width: 50.286, height: 50.286 },
+      { x: 873.143, y: 0, width: 50.286, height: 50.286 },
+      { x: 873.143, y: 361.143, width: 50.286, height: 50.286 },
+      { x: 0, y: 361.143, width: 50.286, height: 50.286 },
+    ],
+  },
+};
+
 export const fixtures = {
   iPhoneDuoOuterPortrait,
   iPhoneDuoOuterPortraitWithTabBar,
@@ -171,6 +259,10 @@ export const fixtures = {
   iPhoneDuoInnerBookFold,
   iPhoneDuoInnerPortrait,
   iPhone18ProPortrait,
+  iPadProFullScreen,
+  iPadProWindow,
+  pixel10Portrait,
+  pixel10Landscape,
 };
 
 export type FixtureName = keyof typeof fixtures;

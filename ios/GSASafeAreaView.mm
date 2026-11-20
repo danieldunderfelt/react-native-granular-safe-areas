@@ -29,6 +29,8 @@ struct GSARegion {
   CGRect frame;
   /// The edge the region hugs: 0 for none (a floating region), then 1 top, 2 right, 3 bottom, 4 left.
   int edge;
+  /// For a corner region (an iPad window's controls), the other edge it hugs, coded the same way; 0 otherwise.
+  int side;
   /// The view that draws it (a bar, an accessory, the vertical bar back button), or 0 for system UI.
   NSInteger owner;
   /// A whole inset band.
@@ -53,6 +55,7 @@ static std::vector<GSARegion> GSARegionsFrom(const std::vector<T> &source)
     regions.push_back({
         CGRectMake(region.x, region.y, region.width, region.height),
         region.edge,
+        region.side,
         region.owner,
         region.band,
         region.owner == 0,
@@ -91,9 +94,22 @@ static UIEdgeInsets GSAInsetsForElement(
     // Top, right, bottom, left.
     const CGFloat need[4] = {
         CGRectGetMaxY(f) - y, maxX - CGRectGetMinX(f), maxY - CGRectGetMinY(f), CGRectGetMaxX(f) - x};
+    int edge = region.edge;
+    const bool sideAllowed = region.side != 0 && (edges & (1 << (region.side - 1))) != 0 &&
+        (ignored & (1 << (region.side - 1))) == 0;
+    if (edge != 0 && sideAllowed) {
+      // A corner region (an iPad window's controls): away from its edge, below the controls, unless that takes more
+      // than half of the element's size along that axis or isn't allowed; then away from its side, past them, the way
+      // a toolbar's items move over. `cornerExit` in geometry.ts.
+      const CGFloat size = (edge == 1 || edge == 3) ? maxY - y : maxX - x;
+      const bool away = (edges & (1 << (edge - 1))) != 0 && need[edge - 1] <= size / 2;
+      if (!away) {
+        edge = region.side;
+      }
+    }
     int best = -1;
     for (int i = 0; i < 4; i++) {
-      if ((region.edge != 0 && region.edge != i + 1) || (edges & (1 << i)) == 0) {
+      if ((edge != 0 && edge != i + 1) || (edges & (1 << i)) == 0) {
         continue;
       }
       if (best < 0 || need[i] < need[best]) {

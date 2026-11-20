@@ -230,11 +230,18 @@ internal object GSAMetrics {
     val insets = WindowInsetsCompat.toWindowInsetsCompat(raw, decor)
     val types = JSONObject()
     for ((name, type) in TYPES) {
+      // The IME has no maximum insets to ask for.
+      val ignoringVisibility =
+          try {
+            insetsJSON(insets.getInsetsIgnoringVisibility(type))
+          } catch (_: IllegalArgumentException) {
+            JSONObject.NULL
+          }
       types.put(
           name,
           JSONObject()
               .put("insets", insetsJSON(insets.getInsets(type)))
-              .put("ignoringVisibility", insetsJSON(insets.getInsetsIgnoringVisibility(type)))
+              .put("ignoringVisibility", ignoringVisibility)
               .put("visible", insets.isVisible(type)),
       )
     }

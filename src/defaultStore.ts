@@ -25,7 +25,7 @@ export function getDefaultStore(): GranularSafeAreaStore {
     store.publish(
       buildRegions(metrics),
       metrics,
-      buildRegions(metrics, { refine: false })
+      buildRegions(metrics, { granular: false })
     );
   };
   const initial = parseMetrics(getInitialWindowMetricsJSON());

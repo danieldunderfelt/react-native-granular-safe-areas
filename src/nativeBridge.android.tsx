@@ -1,11 +1,4 @@
-import {
-  Pressable,
-  StyleSheet,
-  View,
-  type HostInstance,
-  type StyleProp,
-  type ViewStyle,
-} from 'react-native';
+import type { HostInstance } from 'react-native';
 import { parseMetrics } from './metrics';
 import NativeAnchor from './specs/GranularSafeAreaAnchorNativeComponent';
 import ProviderView, {
@@ -27,37 +20,7 @@ export const NativeSafeAreaView: typeof NativeView | null = NativeView;
 /** Android has no place for a system back button; for mocked layouts, the provider draws a stand-in. */
 export const nativeHostsBackButton = false;
 
-/** A stand-in for the iPhone Duo's glass back button, for layouts mocked with its metrics. */
-export function BackButtonStandIn({
-  systemImage,
-  label,
-  onPress,
-  style,
-}: {
-  systemImage: string;
-  label?: string;
-  onPress: () => unknown;
-  style?: StyleProp<ViewStyle>;
-}) {
-  const close = systemImage === 'xmark';
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      onPress={onPress}
-      style={({ pressed }) => [style, styles.button, pressed && styles.pressed]}
-    >
-      {close ? (
-        <>
-          <View style={[styles.line, styles.lineA]} />
-          <View style={[styles.line, styles.lineB]} />
-        </>
-      ) : (
-        <View style={styles.chevron} />
-      )}
-    </Pressable>
-  );
-}
+export { BackButtonStandIn } from './BackButtonStandIn';
 
 /** Scrolling is followed natively. */
 export const canTrackScrollFromJS = false;
@@ -103,34 +66,3 @@ export function getDiagnosticsJSON(): Promise<string | null> {
     ? NativeGranularSafeAreas.getDiagnostics()
     : Promise.resolve(null);
 }
-
-const styles = StyleSheet.create({
-  button: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 999,
-    backgroundColor: 'rgba(255, 255, 255, 0.75)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(0, 0, 0, 0.15)',
-    elevation: 2,
-  },
-  pressed: { opacity: 0.6 },
-  chevron: {
-    width: 12,
-    height: 12,
-    marginLeft: 5,
-    borderLeftWidth: 2.5,
-    borderBottomWidth: 2.5,
-    borderColor: '#1c1c1e',
-    transform: [{ rotate: '45deg' }],
-  },
-  line: {
-    position: 'absolute',
-    width: 16,
-    height: 2.5,
-    borderRadius: 2,
-    backgroundColor: '#1c1c1e',
-  },
-  lineA: { transform: [{ rotate: '45deg' }] },
-  lineB: { transform: [{ rotate: '-45deg' }] },
-});

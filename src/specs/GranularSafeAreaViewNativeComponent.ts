@@ -24,7 +24,8 @@ export type InsetsChangeEvent = Readonly<{
 export interface NativeProps extends ViewProps {
   /**
    * The regions broken down as far as the platform allows. In the provider's coordinates, with `avoid` and `spacing`
-   * applied. `edge`: 0 for a floating region, then 1 top, 2 right, 3 bottom, 4 left. `owner`: the view that draws it
+   * applied. `edge`: 0 for a floating region, then 1 top, 2 right, 3 bottom, 4 left. `side`: the other edge of a
+   * corner region (iPad window controls), coded the same way, or 0. `owner`: the view that draws it
    * (a bar, an accessory), which only covers what's drawn beneath it; 0 for system UI, which covers everything.
    * `band`: a whole inset band.
    */
@@ -35,6 +36,7 @@ export interface NativeProps extends ViewProps {
       width: CodegenTypes.Double;
       height: CodegenTypes.Double;
       edge: CodegenTypes.Int32;
+      side: CodegenTypes.Int32;
       owner: CodegenTypes.Int32;
       band: boolean;
     }>
@@ -47,6 +49,7 @@ export interface NativeProps extends ViewProps {
       width: CodegenTypes.Double;
       height: CodegenTypes.Double;
       edge: CodegenTypes.Int32;
+      side: CodegenTypes.Int32;
       owner: CodegenTypes.Int32;
       band: boolean;
     }>
