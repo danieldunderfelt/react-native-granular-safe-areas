@@ -14,6 +14,41 @@ function makeStore() {
 }
 
 describe('GranularSafeAreaStore', () => {
+  describe('accessories', () => {
+    const boardingPass = {
+      kind: 'accessory' as const,
+      edge: 'bottom' as const,
+      frame: { x: 12, y: 560, width: 442, height: 70 },
+      owner: -42,
+    };
+
+    it('adds an accessory to the regions and to the bands, where views avoiding whole bands find it', () => {
+      const { store, listener } = makeStore();
+      store.publish(
+        buildRegions(duo),
+        duo,
+        buildRegions(duo, { refine: false })
+      );
+      listener.mockClear();
+      store.setAccessory(boardingPass.owner, boardingPass);
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect(store.getSnapshot().regions).toContainEqual(boardingPass);
+      expect(store.getSnapshot().bands).toContainEqual(boardingPass);
+    });
+
+    it('ignores an accessory reported again where it already is, and removes it', () => {
+      const { store, listener } = makeStore();
+      store.publish(buildRegions(duo), duo);
+      store.setAccessory(boardingPass.owner, boardingPass);
+      listener.mockClear();
+      store.setAccessory(boardingPass.owner, { ...boardingPass });
+      expect(listener).not.toHaveBeenCalled();
+      store.setAccessory(boardingPass.owner, null);
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect(store.getSnapshot().regions).not.toContainEqual(boardingPass);
+    });
+  });
+
   it('notifies when the regions change, and not when equal regions are published again', () => {
     const { store, listener } = makeStore();
     store.publish(buildRegions(duo), duo);
@@ -97,6 +132,8 @@ describe('GranularSafeAreaStore', () => {
         kind: 'systemBar',
         edge: 'right',
         frame: { x: 382, y: 174, width: 84, height: 48 },
+        // Drawn by the button, so a sheet over it ignores it.
+        owner: store.backButtonOwnerId,
       });
     });
 

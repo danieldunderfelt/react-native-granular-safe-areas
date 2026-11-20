@@ -8,24 +8,23 @@ export {
 } from './GranularSafeAreaProvider';
 export type { GranularSafeAreaSnapshot, GranularSafeAreaStore } from './store';
 
-// Automatic: measure an element and apply its insets.
+// A granular drop-in for react-native-safe-area-context's SafeAreaView. It takes precedence over the re-export above.
 export {
-  GranularSafeAreaView,
-  type GranularSafeAreaViewProps,
-} from './GranularSafeAreaView';
-export {
-  useGranularSafeArea,
-  type GranularSafeAreaProps,
-  type UseGranularSafeAreaOptions,
-  type UseGranularSafeAreaResult,
-} from './useGranularSafeArea';
+  SafeAreaView,
+  useSafeAreaViewInsets,
+  type SafeAreaViewProps,
+} from './SafeAreaView';
 
-// Manual: insets for a position you describe, applied by you. Plus raw access.
+// App UI floating over the content, which other views avoid where it's drawn on top of them.
+export { SafeAreaAccessory, type SafeAreaAccessoryProps } from './SafeAreaView';
+
+// Insets for a position you describe, applied by you. Plus raw access.
 export {
-  useGranularSafeAreaInsets,
   useGranularSafeAreaMetrics,
   useGranularSafeAreaStore,
+  useSafeAreaInsetsFor,
   useSafeAreaRegions,
+  type SafeAreaInsetsForOptions,
 } from './hooks';
 
 // The vertical bar: a native back button for custom headers, and the bar's layout.
@@ -54,12 +53,13 @@ export {
   getVerticalBar,
   metricsForSubrect,
   placementToRect,
-  sweepRegions,
+  safeAreaViewInsets,
   verticalBarBackButtonFrame,
   VERTICAL_BAR_ITEM_SIZE,
   type BuildRegionsOptions,
   type ElementInsetsOptions,
   type GranularPlacement,
+  type SafeAreaViewInsetsOptions,
   type VerticalBar,
 } from './geometry';
 export { parseMetrics } from './metrics';
@@ -67,8 +67,9 @@ export type {
   GranularInsetsOptions,
   GranularSafeAreaMetrics,
   GranularSafeAreaMode,
-  GranularSafeAreaOptions,
   ReservedRegionFrame,
   SafeAreaRegion,
   SafeAreaRegionKind,
+  ScrollAxes,
+  SystemBarFrame,
 } from './types';

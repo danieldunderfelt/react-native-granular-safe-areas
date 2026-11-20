@@ -45,6 +45,43 @@ static const NSTimeInterval GSAWatchdogInterval = 1.0;
   [super load];
 }
 
+/// Every provider, so content outside any of them (a sheet, a modal) can find the one covering its window.
+static NSHashTable<GSAProviderView *> *GSAProviders(void)
+{
+  static NSHashTable<GSAProviderView *> *providers;
+  static dispatch_once_t once;
+  dispatch_once(&once, ^{
+    providers = [NSHashTable weakObjectsHashTable];
+  });
+  return providers;
+}
+
++ (nullable GSAProviderView *)providerForView:(UIView *)view
+{
+  for (UIView *ancestor = view.superview; ancestor != nil; ancestor = ancestor.superview) {
+    if ([ancestor isKindOfClass:GSAProviderView.class]) {
+      return (GSAProviderView *)ancestor;
+    }
+  }
+  UIWindow *window = view.window;
+  if (window == nil) {
+    return nil;
+  }
+  for (GSAProviderView *provider in GSAProviders()) {
+    if (provider.window != window) {
+      continue;
+    }
+    BOOL outermost = YES;
+    for (UIView *ancestor = provider.superview; ancestor != nil && outermost; ancestor = ancestor.superview) {
+      outermost = ![ancestor isKindOfClass:GSAProviderView.class];
+    }
+    if (outermost) {
+      return provider;
+    }
+  }
+  return nil;
+}
+
 + (ComponentDescriptorProvider)componentDescriptorProvider
 {
   return concreteComponentDescriptorProvider<GranularSafeAreaProviderViewComponentDescriptor>();
@@ -62,6 +99,7 @@ static const NSTimeInterval GSAWatchdogInterval = 1.0;
   if (self = [super initWithFrame:frame]) {
     static const auto defaultProps = std::make_shared<const GranularSafeAreaProviderViewProps>();
     _props = defaultProps;
+    [GSAProviders() addObject:self];
 
     if (@available(iOS 17.0, *)) {
       // Poses change the size classes; a right-to-left switch changes which side "trailing" is.

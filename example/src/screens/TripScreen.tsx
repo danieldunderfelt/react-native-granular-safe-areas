@@ -2,13 +2,15 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import {
-  GranularSafeAreaView,
-  useGranularSafeArea,
-  useGranularSafeAreaInsets,
+  SafeAreaAccessory,
+  SafeAreaView,
   useSafeAreaInsets,
+  useSafeAreaInsetsFor,
+  useSafeAreaViewInsets,
   VerticalBarBackButton,
 } from 'react-native-granular-safe-areas';
 import type { RootStackParamList } from '../navigation';
+import { useJsSheet } from '../overlays';
 import { useAvoid } from '../settings';
 import { TRIPS } from '../trips';
 
@@ -16,8 +18,10 @@ const HEADER_HEIGHT = 60;
 
 /**
  * A layout like the one in the README's screenshot: a custom header, a scrolling list of cards with a badge, and
- * floating controls. It shows each API: manual insets for the header, the automatic hook for the feedback button,
- * `GranularSafeAreaView` for the rest, and `VerticalBarBackButton` for the header's back button.
+ * floating controls. It shows each behavior: the list content keeps clear of the whole column (the default), the
+ * floating controls avoid only what's beside them (`granular`), and the badges follow their cards as they scroll
+ * (`dynamic`). The next flight bar at the bottom is an accessory: the list ends above it, while the overlays opened
+ * from the list cover it and ignore it. The header uses manual insets, and its back button `VerticalBarBackButton`.
  */
 export function TripScreen() {
   const navigation =
@@ -26,73 +30,22 @@ export function TripScreen() {
   const { top } = useSafeAreaInsets();
 
   // Manual: the header is a full-width strip at the top, so describe it and apply the insets by hand.
-  const header = useGranularSafeAreaInsets(
+  const header = useSafeAreaInsetsFor(
     { top: 0, height: top + HEADER_HEIGHT },
-    { avoid }
+    { avoid, granular: true }
   );
-
-  // Automatic, as props: the button is measured and moved clear of whatever is beside it.
-  const feedback = useGranularSafeArea({
-    mode: 'offset',
-    edges: ['right', 'bottom'],
-    spacing: 8,
-    avoid,
-    style: styles.feedback,
-  });
 
   return (
     <View style={styles.screen}>
-      <ScrollView
-        contentContainerStyle={[
-          styles.list,
-          { paddingTop: top + HEADER_HEIGHT + 24 },
-        ]}
+      {/* Measures the screen and hands its insets to the list: whatever covers its bottom, accessories included. */}
+      <SafeAreaView
+        mode="none"
+        edges={['bottom']}
+        avoid={avoid}
+        style={styles.fill}
       >
-        {TRIPS.map((trip) => (
-          <View key={trip.code}>
-            {/* Scrolling text passes under every region in the column, so it avoids the whole column. */}
-            <GranularSafeAreaView
-              scrollable="vertical"
-              edges={['left', 'right']}
-              avoid={avoid}
-            >
-              <Text style={styles.when}>{trip.when}</Text>
-            </GranularSafeAreaView>
-            {/* The card's picture runs under the column; only its text and badge have to stay readable. */}
-            <Pressable
-              style={styles.card}
-              onPress={() =>
-                navigation.navigate('TripDetails', { code: trip.code })
-              }
-            >
-              <View style={[styles.picture, { backgroundColor: trip.color }]}>
-                <Text style={styles.pictureCode}>{trip.code}</Text>
-              </View>
-              {/* Dynamic: it follows the badge as it scrolls, so it moves in only while it passes a region. */}
-              <GranularSafeAreaView
-                dynamic
-                mode="offset"
-                scrollable="vertical"
-                edges={['left', 'right']}
-                spacing={4}
-                avoid={avoid}
-                style={styles.badge}
-              >
-                <Text style={styles.badgeText}>Check-in open</Text>
-              </GranularSafeAreaView>
-              <GranularSafeAreaView
-                scrollable="vertical"
-                edges={['left', 'right']}
-                avoid={avoid}
-                style={styles.cardBody}
-              >
-                <Text style={styles.route}>{trip.route}</Text>
-                <Text style={styles.detail}>{trip.detail}</Text>
-              </GranularSafeAreaView>
-            </Pressable>
-          </View>
-        ))}
-      </ScrollView>
+        <TripList top={top + HEADER_HEIGHT} />
+      </SafeAreaView>
 
       {/* The background stays under the status cluster; the content moves in next to it. */}
       <View
@@ -122,12 +75,26 @@ export function TripScreen() {
         </Pressable>
       </View>
 
-      <Pressable {...feedback.props}>
-        <Text style={styles.feedbackText}>Feedback</Text>
-      </Pressable>
+      {/* Moved clear of whatever is beside it, and only then. */}
+      <SafeAreaView
+        granular
+        mode="offset"
+        edges={['right', 'bottom']}
+        spacing={8}
+        avoid={avoid}
+        style={styles.feedbackPosition}
+      >
+        <Pressable style={styles.feedback}>
+          <Text style={styles.feedbackText}>Feedback</Text>
+        </Pressable>
+      </SafeAreaView>
 
-      {/* Padded clear of the home indicator, and of a vertical tab bar if one is beside it. */}
-      <GranularSafeAreaView
+      {/*
+        An accessory, like a boarding pass button: padded clear of the home indicator and of a tab bar beside it, and
+        avoided by the content beneath it. Sheets and modals cover it, so they ignore it.
+      */}
+      <SafeAreaAccessory
+        granular
         edges={['left', 'right', 'bottom']}
         avoid={avoid}
         style={styles.dock}
@@ -141,13 +108,96 @@ export function TripScreen() {
             <Text style={styles.qrText}>▦</Text>
           </Pressable>
         </View>
-      </GranularSafeAreaView>
+      </SafeAreaAccessory>
     </View>
+  );
+}
+
+/** The cards, padded at the bottom by the insets of the `SafeAreaView` around them. */
+function TripList({ top }: { top: number }) {
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const avoid = useAvoid();
+  const jsSheet = useJsSheet();
+  const { bottom } = useSafeAreaViewInsets();
+  return (
+    <ScrollView
+      contentContainerStyle={[
+        styles.list,
+        { paddingTop: top + 24, paddingBottom: bottom + 24 },
+      ]}
+    >
+      {/* The overlays cover the next flight bar and the tab bar: their content ignores both. */}
+      <SafeAreaView
+        edges={['left', 'right']}
+        avoid={avoid}
+        style={styles.chips}
+      >
+        <Chip title="JS sheet" onPress={jsSheet.open} />
+        <Chip title="Form sheet" onPress={() => navigation.navigate('Sheet')} />
+        <Chip title="Modal" onPress={() => navigation.navigate('Modal')} />
+      </SafeAreaView>
+      {TRIPS.map((trip) => (
+        <View key={trip.code}>
+          {/* Scrolling text passes under everything in the column, so it keeps clear of the whole column. */}
+          <SafeAreaView edges={['left', 'right']} avoid={avoid}>
+            <Text style={styles.when}>{trip.when}</Text>
+          </SafeAreaView>
+          {/* The card's picture runs under the column; only its text and badge have to stay readable. */}
+          <Pressable
+            style={styles.card}
+            onPress={() =>
+              navigation.navigate('TripDetails', { code: trip.code })
+            }
+          >
+            <View style={[styles.picture, { backgroundColor: trip.color }]}>
+              <Text style={styles.pictureCode}>{trip.code}</Text>
+            </View>
+            {/* Dynamic: the badge follows its card, and moves in only while it passes a region. */}
+            <SafeAreaView
+              dynamic
+              mode="offset"
+              edges={['left', 'right']}
+              spacing={4}
+              avoid={avoid}
+              style={styles.badge}
+            >
+              <Text style={styles.badgeText}>Check-in open</Text>
+            </SafeAreaView>
+            <SafeAreaView
+              edges={['left', 'right']}
+              avoid={avoid}
+              style={styles.cardBody}
+            >
+              <Text style={styles.route}>{trip.route}</Text>
+              <Text style={styles.detail}>{trip.detail}</Text>
+            </SafeAreaView>
+          </Pressable>
+        </View>
+      ))}
+    </ScrollView>
+  );
+}
+
+function Chip({ title, onPress }: { title: string; onPress: () => void }) {
+  return (
+    <Pressable style={styles.chip} onPress={onPress}>
+      <Text style={styles.chipText}>{title}</Text>
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#0b0618' },
+  fill: { flex: 1 },
+  chips: { flexDirection: 'row', gap: 8, marginBottom: 8 },
+  chip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: '#2a2838',
+  },
+  chipText: { color: '#fff', fontWeight: '600' },
   header: {
     position: 'absolute',
     top: 0,
@@ -168,7 +218,6 @@ const styles = StyleSheet.create({
   },
   signInText: { color: '#0b0618', fontWeight: '700' },
   list: {
-    paddingBottom: 160,
     paddingHorizontal: 16,
     gap: 8,
   },
@@ -193,10 +242,8 @@ const styles = StyleSheet.create({
   cardBody: { padding: 16, gap: 4 },
   route: { color: '#fff', fontSize: 20, fontWeight: '700' },
   detail: { color: '#b8b5c8', fontSize: 15 },
+  feedbackPosition: { position: 'absolute', right: 16, bottom: 120 },
   feedback: {
-    position: 'absolute',
-    right: 16,
-    bottom: 120,
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 999,

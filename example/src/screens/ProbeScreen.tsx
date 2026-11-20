@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import {
   getDiagnostics,
-  GranularSafeAreaView,
+  SafeAreaView,
   useGranularSafeAreaMetrics,
   useSafeAreaRegions,
 } from 'react-native-granular-safe-areas';
@@ -44,11 +44,7 @@ export function ProbeScreen() {
       style={styles.screen}
       contentInsetAdjustmentBehavior="automatic"
     >
-      <GranularSafeAreaView
-        scrollable="vertical"
-        edges={['left', 'right']}
-        style={styles.content}
-      >
+      <SafeAreaView edges={['left', 'right']} style={styles.content}>
         <Button title="Collect diagnostics" onPress={collect} />
         {diagnostics ? (
           <Button
@@ -77,7 +73,7 @@ export function ProbeScreen() {
             </Text>
           </>
         ) : null}
-      </GranularSafeAreaView>
+      </SafeAreaView>
     </ScrollView>
   );
 }

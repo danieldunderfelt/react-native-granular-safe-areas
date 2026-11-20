@@ -5,6 +5,8 @@ import {
   verticalBarBackButtonFrame,
   type VerticalBar,
 } from './geometry';
+import type { HostInstance } from 'react-native';
+import { createOwnerId } from './owners';
 import type { GranularSafeAreaMetrics, Rect, SafeAreaRegion } from './types';
 
 /** Which symbol a vertical bar back button shows: a back chevron, or a close cross for modals and sheets. */
@@ -23,6 +25,8 @@ export type VerticalBarBackButtonState = {
 export type GranularSafeAreaSnapshot = {
   /** The regions to avoid, in the provider's coordinate space. Includes the vertical bar back button when shown. */
   regions: readonly SafeAreaRegion[];
+  /** The same with every inset band whole, as a regular safe area has them. What views avoid by default. */
+  bands: readonly SafeAreaRegion[];
   /** The raw platform metrics the regions were built from. `null` until the provider has been measured. */
   metrics: GranularSafeAreaMetrics | null;
   /** The system's vertical bar where this provider is, if there is one. */
@@ -52,12 +56,18 @@ type Registration = BackButtonRegistration & { order: number };
 export class GranularSafeAreaStore {
   private snapshot: GranularSafeAreaSnapshot = {
     regions: [],
+    bands: [],
     metrics: null,
     verticalBar: null,
     backButton: null,
     version: 0,
   };
   private baseRegions: readonly SafeAreaRegion[] = [];
+  private baseBands: readonly SafeAreaRegion[] = [];
+  private readonly accessories = new Map<number, SafeAreaRegion>();
+  private readonly accessoryNodes = new Map<number, HostInstance>();
+  /** The owner id of the vertical bar back button's region: the button view registers under it natively. */
+  readonly backButtonOwnerId = createOwnerId();
   private readonly listeners = new Set<() => unknown>();
   private providerRect: { version: number; rect: Rect | null } | null = null;
   private refreshScheduled = false;
@@ -67,7 +77,9 @@ export class GranularSafeAreaStore {
 
   constructor(
     private readonly measureProvider: () => Rect | null,
-    private readonly refreshNative: () => unknown
+    private readonly refreshNative: () => unknown,
+    /** The provider's host view. */
+    readonly getProviderNode: () => HostInstance | null = () => null
   ) {}
 
   getSnapshot = (): GranularSafeAreaSnapshot => this.snapshot;
@@ -90,12 +102,17 @@ export class GranularSafeAreaStore {
     return this.providerRect.rect;
   }
 
-  /** Publishes new regions. Subscribers only run if something they can see actually changed. */
+  /**
+   * Publishes new regions, and the same with whole bands (the regions themselves when they aren't broken down).
+   * Subscribers only run if something they can see actually changed.
+   */
   publish(
     regions: readonly SafeAreaRegion[],
-    metrics: GranularSafeAreaMetrics | null
+    metrics: GranularSafeAreaMetrics | null,
+    bands: readonly SafeAreaRegion[] = regions
   ) {
     this.baseRegions = regions;
+    this.baseBands = bands;
     this.update(metrics);
   }
 
@@ -114,6 +131,31 @@ export class GranularSafeAreaStore {
       this.refreshNative();
     }, 0);
   };
+
+  /**
+   * Adds, moves or (with `null`) removes the region of an accessory: app UI floating over the content, which other
+   * views avoid when it's drawn on top of them.
+   */
+  setAccessory(owner: number, region: SafeAreaRegion | null) {
+    const current = this.accessories.get(owner);
+    if (
+      region === null ? !current : current && regionsEqual([current], [region])
+    )
+      return;
+    if (region) this.accessories.set(owner, region);
+    else this.accessories.delete(owner);
+    this.update(this.snapshot.metrics);
+  }
+
+  /** The web: an accessory's element, to tell from the document order whether it's drawn on top of another one. */
+  setAccessoryNode(owner: number, node: HostInstance | null) {
+    if (node) this.accessoryNodes.set(owner, node);
+    else this.accessoryNodes.delete(owner);
+  }
+
+  getAccessoryNode(owner: number): HostInstance | undefined {
+    return this.accessoryNodes.get(owner);
+  }
 
   /** A new id for {@link registerBackButton}. Taken up front so a component knows its id while it first renders. */
   createBackButtonId(): number {
@@ -170,12 +212,11 @@ export class GranularSafeAreaStore {
         : null;
 
     // The button is drawn over the column, so everything else avoids it like the bar items UIKit draws there.
-    const regions =
+    const backButtonRegions: SafeAreaRegion[] =
       backButton && verticalBar
         ? [
-            ...this.baseRegions,
             {
-              kind: 'systemBar' as const,
+              kind: 'systemBar',
               edge: verticalBar.edge,
               frame: {
                 x: verticalBar.column.x,
@@ -183,15 +224,28 @@ export class GranularSafeAreaStore {
                 width: verticalBar.column.width,
                 height: backButton.frame.height,
               },
+              owner: this.backButtonOwnerId,
             },
           ]
+        : [];
+    // Accessories float over the content anywhere, never inside a band, so they're in both lists.
+    const accessories = [...this.accessories.values()];
+    const regions =
+      backButtonRegions.length + accessories.length > 0
+        ? [...this.baseRegions, ...backButtonRegions, ...accessories]
         : this.baseRegions;
+    const bands =
+      accessories.length > 0
+        ? [...this.baseBands, ...accessories]
+        : this.baseBands;
 
     const regionsChanged = !regionsEqual(previous.regions, regions);
+    const bandsChanged = !regionsEqual(previous.bands, bands);
     const metricsChanged =
       JSON.stringify(previous.metrics) !== JSON.stringify(metrics);
     if (
       !regionsChanged &&
+      !bandsChanged &&
       !metricsChanged &&
       backButtonsEqual(previous.backButton, backButton)
     ) {
@@ -199,6 +253,7 @@ export class GranularSafeAreaStore {
     }
     this.snapshot = {
       regions: regionsChanged ? regions : previous.regions,
+      bands: bandsChanged ? bands : previous.bands,
       metrics,
       verticalBar:
         metricsChanged || regionsChanged ? verticalBar : previous.verticalBar,
@@ -206,7 +261,7 @@ export class GranularSafeAreaStore {
         ? previous.backButton
         : backButton,
       version:
-        regionsChanged || metricsChanged
+        regionsChanged || bandsChanged || metricsChanged
           ? previous.version + 1
           : previous.version,
     };

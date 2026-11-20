@@ -1,66 +1,97 @@
 import { StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
-import { EDGES } from './geometry';
-import type { Edge, EdgeInsets, GranularSafeAreaMode } from './types';
+import { EDGES, ZERO_INSETS } from './geometry';
+import type { Edge, EdgeInsets, EdgeMode } from './types';
 
-const PADDING: Record<Edge, keyof ViewStyle> = {
-  top: 'paddingTop',
-  right: 'paddingRight',
-  bottom: 'paddingBottom',
-  left: 'paddingLeft',
+type LayoutKind = 'padding' | 'margin';
+
+const SIDE: Record<LayoutKind, Record<Edge, keyof ViewStyle>> = {
+  padding: {
+    top: 'paddingTop',
+    right: 'paddingRight',
+    bottom: 'paddingBottom',
+    left: 'paddingLeft',
+  },
+  margin: {
+    top: 'marginTop',
+    right: 'marginRight',
+    bottom: 'marginBottom',
+    left: 'marginLeft',
+  },
 };
-const AXIS_PADDING: Record<Edge, keyof ViewStyle> = {
-  top: 'paddingVertical',
-  right: 'paddingHorizontal',
-  bottom: 'paddingVertical',
-  left: 'paddingHorizontal',
+const AXIS: Record<LayoutKind, Record<Edge, keyof ViewStyle>> = {
+  padding: {
+    top: 'paddingVertical',
+    right: 'paddingHorizontal',
+    bottom: 'paddingVertical',
+    left: 'paddingHorizontal',
+  },
+  margin: {
+    top: 'marginVertical',
+    right: 'marginHorizontal',
+    bottom: 'marginVertical',
+    left: 'marginHorizontal',
+  },
 };
 
-/** The style that applies `insets` to an element whose own style is `style`. `null` when there is nothing to do. */
-export function adjustmentStyle(
-  style: StyleProp<ViewStyle>,
-  insets: EdgeInsets,
-  mode: GranularSafeAreaMode
-): ViewStyle | null {
-  return mode === 'offset'
-    ? offsetStyle(style, insets)
-    : paddingStyle(style, insets);
-}
+export type LayoutAdjustment = {
+  /** The style to put after the element's own, or `null` when nothing changes. */
+  style: ViewStyle | null;
+  /** How much was added on each edge beyond the element's own padding or margin. */
+  added: EdgeInsets;
+};
+
+const NO_ADJUSTMENT: LayoutAdjustment = { style: null, added: ZERO_INSETS };
 
 let warnedPercentage = false;
 
-/** Adds the insets to the padding the element already has on each edge. */
-function paddingStyle(
+/**
+ * Applies `insets` as padding or margin on top of the element's own, per edge like react-native-safe-area-context:
+ * `additive` adds the inset to it, `maximum` uses whichever is larger, `off` leaves the edge alone.
+ */
+export function layoutAdjustment(
   style: StyleProp<ViewStyle>,
-  insets: EdgeInsets
-): ViewStyle | null {
-  if (EDGES.every((edge) => insets[edge] <= 0)) return null;
+  insets: EdgeInsets,
+  kind: LayoutKind,
+  modes: Readonly<Record<Edge, EdgeMode>>
+): LayoutAdjustment {
+  if (EDGES.every((edge) => insets[edge] <= 0)) return NO_ADJUSTMENT;
   const flat: ViewStyle = StyleSheet.flatten(style) ?? {};
   const out: Record<string, number> = {};
+  const added: EdgeInsets = { ...ZERO_INSETS };
   for (const edge of EDGES) {
-    if (insets[edge] <= 0) continue;
-    const base = [
-      flat[PADDING[edge]],
-      flat[AXIS_PADDING[edge]],
-      flat.padding,
+    const mode = modes[edge];
+    if (insets[edge] <= 0 || mode === 'off') continue;
+    const own = [
+      flat[SIDE[kind][edge]],
+      flat[AXIS[kind][edge]],
+      flat[kind],
     ].find((value) => value !== undefined);
-    if (
-      base !== undefined &&
-      typeof base !== 'number' &&
-      __DEV__ &&
-      !warnedPercentage
-    ) {
-      warnedPercentage = true;
-      console.warn(
-        `react-native-granular-safe-areas: mode="padding" can't add an inset to ${String(base)} padding, so it replaces it on the ${edge} edge. Use numeric padding, or put the percentage on an inner view.`
-      );
-    }
-    out[PADDING[edge]] = (typeof base === 'number' ? base : 0) + insets[edge];
+    if (own !== undefined && typeof own !== 'number') warnPercentage(kind, own);
+    const base = typeof own === 'number' ? own : 0;
+    const value =
+      mode === 'maximum' ? Math.max(base, insets[edge]) : base + insets[edge];
+    if (value === base) continue;
+    out[SIDE[kind][edge]] = value;
+    added[edge] = value - base;
   }
-  return out;
+  return Object.keys(out).length > 0
+    ? { style: out as ViewStyle, added }
+    : NO_ADJUSTMENT;
 }
 
-/** Translates the element by the insets. Ours comes first, so it's in the parent's units even if the element scales. */
-function offsetStyle(
+function warnPercentage(kind: LayoutKind, value: unknown) {
+  if (!__DEV__ || warnedPercentage) return;
+  warnedPercentage = true;
+  console.warn(
+    `react-native-granular-safe-areas: mode="${kind}" can't add an inset to ${String(value)} ${kind}, so it replaces it. Use a number, or put the percentage on an inner view.`
+  );
+}
+
+/**
+ * Translates the element by the insets, for platforms where the native side doesn't. Ours comes first, so it's in the
+ * parent's units even if the element scales.
+ */
+export function offsetStyle(
   style: StyleProp<ViewStyle>,
   insets: EdgeInsets
 ): ViewStyle | null {

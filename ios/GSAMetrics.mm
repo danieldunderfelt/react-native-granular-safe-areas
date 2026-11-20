@@ -1,5 +1,7 @@
 #import "GSAMetrics.h"
 
+#import "GSAOwners.h"
+
 #import <React/RCTViewComponentView.h>
 #import <sys/utsname.h>
 
@@ -152,23 +154,6 @@ static BOOL GSAIsVisible(UIView *view)
   return !CGRectIsEmpty(view.bounds);
 }
 
-/// The top of the view controller hierarchy `view` is presented in.
-static UIViewController *_Nullable GSAPresentationRoot(UIView *view)
-{
-  if ([view isKindOfClass:UIWindow.class]) {
-    return ((UIWindow *)view).rootViewController;
-  }
-  UIResponder *responder = view;
-  while (responder != nil && ![responder isKindOfClass:UIViewController.class]) {
-    responder = responder.nextResponder;
-  }
-  UIViewController *controller = (UIViewController *)responder;
-  while (controller.parentViewController != nil) {
-    controller = controller.parentViewController;
-  }
-  return controller ?: view.window.rootViewController;
-}
-
 /// Whether a visible container in this part of the controller tree can put bars in the vertical column. Deliberately
 /// broad: a tab bar controller counts even if UIKit hides its UITabBar in favor of a vertical one.
 static BOOL GSAHasVisibleBarContainer(UIViewController *controller, NSUInteger depth)
@@ -209,12 +194,13 @@ static BOOL GSAHasVisibleBarContainer(UIViewController *controller, NSUInteger d
 
 + (instancetype)scanForView:(UIView *)view
 {
-  UIViewController *root = GSAPresentationRoot(view);
-  UIView *scanRoot = root.viewIfLoaded ?: GSAWindowOf(view);
+  // Every presentation in the window: each view decides for itself which bars are drawn on top of it, so a sheet's
+  // content ignores the bars of the screen it covers, and the screen's content avoids the sheet's.
+  UIWindow *window = GSAWindowOf(view);
   NSMutableArray<UIView *> *bars = [NSMutableArray new];
   BOOL foundFloatingBars = NO;
-  if (scanRoot != nil) {
-    GSACollectBars(scanRoot, bars, 0, &foundFloatingBars);
+  if (window != nil) {
+    GSACollectBars(window, bars, 0, &foundFloatingBars);
   }
   if (foundFloatingBars) {
     // With floating bars, a vertical UITabBar or UIToolbar is a placeholder: on the Duo, UITabBarController keeps an
@@ -226,7 +212,11 @@ static BOOL GSAHasVisibleBarContainer(UIViewController *controller, NSUInteger d
     }];
     [bars removeObjectsAtIndexes:placeholders];
   }
-  BOOL containersVisible = root != nil && GSAHasVisibleBarContainer(root, 0);
+  BOOL containersVisible = NO;
+  for (UIViewController *controller = window.rootViewController; controller != nil && !containersVisible;
+       controller = controller.presentedViewController) {
+    containersVisible = GSAHasVisibleBarContainer(controller, 0);
+  }
   return [[self alloc] initWithBarViews:bars containersVisible:containersVisible barItemsKnown:foundFloatingBars];
 }
 
@@ -329,7 +319,10 @@ NSDictionary *_Nullable GSAMetricsForView(UIView *view, GSAWindowBars *_Nullable
   NSMutableArray<NSDictionary *> *systemBars = [NSMutableArray new];
   for (UIView *bar in windowBars.barViews) {
     if (bar.window == window && GSAIsVisible(bar)) {
-      [systemBars addObject:GSARect([view convertRect:bar.bounds fromView:bar])];
+      NSMutableDictionary *entry = [GSARect([view convertRect:bar.bounds fromView:bar]) mutableCopy];
+      // Which view draws it, so each view can tell whether the bar is drawn on top of it.
+      entry[@"owner"] = @(GSAOwnerIdForView(bar));
+      [systemBars addObject:entry];
     }
   }
   metrics[@"systemBars"] = systemBars;

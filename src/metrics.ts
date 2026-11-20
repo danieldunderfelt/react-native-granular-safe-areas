@@ -76,7 +76,12 @@ export function parseMetrics(json: string | null | undefined) {
     occlusions: parseRegions(data.occlusions),
     divisions: parseRegions(data.divisions),
     systemBars: Array.isArray(data.systemBars)
-      ? data.systemBars.flatMap((r) => parseRect(r) ?? [])
+      ? data.systemBars.flatMap((r) => {
+          const rect = parseRect(r);
+          if (!rect) return [];
+          const owner = isObject(r) ? num(r.owner) : null;
+          return [owner !== null ? { ...rect, owner } : rect];
+        })
       : [],
     // Unknown counts as visible: it keeps the band whole unless a vertical bar was found.
     barContainersVisible: data.barContainersVisible !== false,

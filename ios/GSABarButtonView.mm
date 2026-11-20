@@ -1,5 +1,7 @@
 #import "GSABarButtonView.h"
 
+#import "GSAOwners.h"
+
 #import <React/RCTConversions.h>
 #import <react/renderer/components/GranularSafeAreasSpec/ComponentDescriptors.h>
 #import <react/renderer/components/GranularSafeAreasSpec/EventEmitters.h>
@@ -45,6 +47,12 @@ static UIButtonConfiguration *GSABarButtonConfiguration(void)
   return concreteComponentDescriptorProvider<GranularSafeAreaBarButtonComponentDescriptor>();
 }
 
+// There's one at a time, and a recycled one would stay registered as a region owner.
++ (BOOL)shouldBeRecycled
+{
+  return NO;
+}
+
 - (instancetype)initWithFrame:(CGRect)frame
 {
   if (self = [super initWithFrame:frame]) {
@@ -75,8 +83,18 @@ static UIButtonConfiguration *GSABarButtonConfiguration(void)
   if (newButtonProps.label != oldButtonProps.label) {
     _button.accessibilityLabel = RCTNSStringFromStringNilIfEmpty(newButtonProps.label);
   }
+  if (newButtonProps.ownerId != oldButtonProps.ownerId) {
+    // The region the button takes in the vertical bar names this view, so a sheet over it can ignore it.
+    GSAUnregisterOwner(oldButtonProps.ownerId, self);
+    GSARegisterOwner(newButtonProps.ownerId, self);
+  }
 
   [super updateProps:props oldProps:oldProps];
+}
+
+- (void)dealloc
+{
+  GSAUnregisterOwner(std::static_pointer_cast<const GranularSafeAreaBarButtonProps>(_props)->ownerId, self);
 }
 
 // Appear the way bar items do: a quick scale and fade. Moving between screens that both show the button keeps the same

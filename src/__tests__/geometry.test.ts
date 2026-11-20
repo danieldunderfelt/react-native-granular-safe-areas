@@ -1,8 +1,10 @@
 import { fixtures } from '../fixtures';
 import {
+  activeEdges,
   buildRegions,
   computeElementInsets,
   edgeMask,
+  edgeModes,
   getVerticalBar,
   followsOwnPadding,
   metricsForSubrect,
@@ -11,11 +13,10 @@ import {
   metricsFromInsets,
   removeOffset,
   resolveVerticalBarEdge,
-  sweepElement,
-  sweepRegions,
+  safeAreaViewInsets,
   trackedRegions,
   verticalBarBackButtonFrame,
-  withoutScrollingEdges,
+  withoutMargins,
 } from '../geometry';
 import { parseMetrics } from '../metrics';
 import type { GranularSafeAreaMetrics, Rect, SafeAreaRegion } from '../types';
@@ -377,68 +378,264 @@ describe('computeElementInsets with floating regions', () => {
   });
 });
 
-describe('sweepRegions', () => {
-  it('treats the whole column as occupied for scrolling content', () => {
-    const swept = sweepRegions(buildRegions(duoTabs), 'vertical', 466, 678);
-    const card = { x: 16, y: 230, width: 434, height: 180 };
-    expect(insetsFor(card, swept)).toEqual({
-      top: 0,
-      right: 450 - 382,
-      bottom: 0,
-      left: 0,
+describe('safeAreaViewInsets', () => {
+  const regions = buildRegions(duoTabs);
+  const bands = buildRegions(duoTabs, { refine: false });
+  const view = (
+    element: Rect,
+    options: Partial<Parameters<typeof safeAreaViewInsets>[1]> = {}
+  ) => safeAreaViewInsets(element, { regions, bands, bounds, ...options });
+  const vertical = { vertical: true, horizontal: false };
+  const badgeAt = (y: number) => ({ x: 316, y, width: 122, height: 24 });
+
+  describe('by default', () => {
+    it('avoids the whole band, even in the free stretch of the column', () => {
+      const card = { x: 16, y: 230, width: 434, height: 180 };
+      expect(view(card).right).toBe(450 - 382);
+    });
+
+    it('gives the same result as granular next to the status cluster', () => {
+      expect(view(badgeAt(150))).toEqual(
+        view(badgeAt(150), { granular: true })
+      );
+    });
+
+    it('still avoids UIKit bars outside the column, which no band covers', () => {
+      const navigationBar = { x: 0, y: 62, width: 402, height: 54 };
+      const metrics = {
+        ...fixtures.iPhone18ProPortrait,
+        systemBars: [navigationBar],
+        barContainersVisible: true,
+      };
+      const button = { x: 300, y: 70, width: 90, height: 36 };
+      const insets = safeAreaViewInsets(button, {
+        regions: buildRegions(metrics),
+        bands: buildRegions(metrics, { refine: false }),
+        bounds: { width: 402, height: 874 },
+      });
+      expect(insets.top).toBe(116 - 70);
     });
   });
 
-  it('drops regions on the scrolling edges', () => {
-    const swept = sweepRegions(buildRegions(duoTabs), 'vertical', 466, 678);
-    expect(swept.some((r) => r.edge === 'bottom')).toBe(false);
+  describe('granular', () => {
+    it('leaves the free stretch of the column alone', () => {
+      const card = { x: 16, y: 230, width: 434, height: 180 };
+      expect(view(card, { granular: true }).right).toBe(0);
+    });
+
+    it('pushes in only what is beside a region', () => {
+      expect(view(badgeAt(150), { granular: true }).right).toBe(438 - 382);
+      expect(view(badgeAt(500), { granular: true }).right).toBe(438 - 382);
+    });
   });
 
-  it('pushes in content measured while it was scrolled out of view', () => {
-    const swept = sweepRegions(buildRegions(duo), 'vertical', 466, 678);
-    // The "Check-in" badge of a card further down the list, below the screen when the list mounted.
-    const badge = { x: 316, y: 900, width: 122, height: 24 };
-    expect(insetsFor(badge, swept).right).toBe(0);
-    expect(insetsFor(sweepElement(badge, 'vertical', bounds), swept)).toEqual({
-      top: 0,
-      right: 438 - 382,
-      bottom: 0,
-      left: 0,
+  describe('in a scroll view', () => {
+    it('keeps content clear of the whole column, wherever it is', () => {
+      for (const y of [150, 300, 500]) {
+        expect(view(badgeAt(y), { scroll: vertical }).right).toBe(438 - 382);
+      }
+    });
+
+    it('pushes in content measured while it was scrolled out of view', () => {
+      expect(view(badgeAt(900)).right).toBe(0);
+      expect(view(badgeAt(900), { scroll: vertical })).toEqual({
+        top: 0,
+        right: 438 - 382,
+        bottom: 0,
+        left: 0,
+      });
+    });
+
+    it('leaves the edges it scrolls towards to the content inset', () => {
+      const row = { x: 0, y: 640, width: 466, height: 30 };
+      expect(view(row).bottom).toBe(670 - 644);
+      expect(view(row, { scroll: vertical }).bottom).toBe(0);
+    });
+
+    it('avoids whole bands even when granular, since its position along the axis is not fixed', () => {
+      const card = { x: 16, y: 230, width: 434, height: 180 };
+      expect(view(card, { granular: true, scroll: vertical }).right).toBe(
+        450 - 382
+      );
+    });
+  });
+
+  describe('dynamic', () => {
+    it('pushes a scrolling badge in only while it passes a region', () => {
+      const dynamic = { dynamic: true, scroll: vertical };
+      expect(view(badgeAt(150), dynamic).right).toBe(438 - 382);
+      expect(view(badgeAt(300), dynamic).right).toBe(0);
+      expect(view(badgeAt(500), dynamic).right).toBe(438 - 382);
+      // Below the screen: nothing until it scrolls in.
+      expect(view(badgeAt(900), dynamic).right).toBe(0);
+    });
+
+    it('does not stick to the bottom inset as it scrolls past it', () => {
+      expect(
+        view(badgeAt(650), { dynamic: true, scroll: vertical }).bottom
+      ).toBe(0);
+    });
+
+    it('avoids what it overlaps right now outside scroll views too', () => {
+      expect(view(badgeAt(300), { dynamic: true }).right).toBe(0);
     });
   });
 });
 
-describe('dynamic elements', () => {
-  const regions = buildRegions(duoTabs);
-  const scrolling = withoutScrollingEdges(regions, 'vertical');
-  const badgeAt = (y: number) => ({ x: 316, y, width: 122, height: 24 });
+describe('what covers a view', () => {
+  // A regular iPhone with a native tab bar, and a boarding pass button floating above it.
+  const iPhone = fixtures.iPhone18ProPortrait;
+  const tabBar = { x: 0, y: 791, width: 402, height: 83, owner: 1 };
+  const phone = {
+    ...iPhone,
+    systemBars: [tabBar],
+    barContainersVisible: true,
+  };
+  const boardingPass: SafeAreaRegion = {
+    kind: 'accessory',
+    edge: 'bottom',
+    frame: { x: 12, y: 720, width: 378, height: 56 },
+    owner: -1,
+  };
+  const phoneRegions = [...buildRegions(phone), boardingPass];
+  const phoneBands = [...buildRegions(phone, { refine: false }), boardingPass];
+  const phoneBounds = { width: 402, height: 874 };
+  const onPhone = (
+    element: Rect,
+    options: Partial<Parameters<typeof safeAreaViewInsets>[1]> = {}
+  ) =>
+    safeAreaViewInsets(element, {
+      regions: phoneRegions,
+      bands: phoneBands,
+      bounds: phoneBounds,
+      edges: ['bottom'],
+      ...options,
+    });
+  const nothingBelow = () => false;
 
-  it('pushes a scrolling badge in only while it passes a region', () => {
-    expect(insetsFor(badgeAt(150), scrolling).right).toBe(438 - 382);
-    expect(insetsFor(badgeAt(300), scrolling).right).toBe(0);
-    expect(insetsFor(badgeAt(500), scrolling).right).toBe(438 - 382);
-    // Below the screen: nothing until it scrolls in.
-    expect(insetsFor(badgeAt(900), scrolling).right).toBe(0);
+  it('gives screen content the tab bar and the accessory above it', () => {
+    const content = { x: 0, y: 0, width: 402, height: 874 };
+    expect(onPhone(content).bottom).toBe(874 - 720);
   });
 
-  it('does not stick to the bottom inset as it scrolls past it', () => {
-    expect(insetsFor(badgeAt(650), scrolling).bottom).toBe(0);
-  });
-
-  it('hands the native side the regions to avoid, already filtered and grown', () => {
+  it('gives a sheet only the home indicator: the tab bar and the accessory are beneath it', () => {
+    const sheet = { x: 0, y: 400, width: 402, height: 474 };
     expect(
-      trackedRegions(regions, {
-        avoid: ['status', 'systemBar'],
-        spacing: 4,
-        scrollable: 'vertical',
-      })
+      onPhone(sheet, { covers: nothingBelow, visible: sheet }).bottom
+    ).toBe(34);
+  });
+
+  it('gives a JS overlay at the root the same, and granular content too', () => {
+    const button = { x: 16, y: 800, width: 370, height: 50 };
+    expect(onPhone(button, { covers: nothingBelow }).bottom).toBe(850 - 840);
+    expect(
+      onPhone(button, { covers: nothingBelow, granular: true }).bottom
+    ).toBe(850 - 840);
+  });
+
+  it('still lets an accessory drawn on top of the overlay count', () => {
+    const content = { x: 0, y: 0, width: 402, height: 874 };
+    const onlyTheAccessory = (owner: number) => owner === -1;
+    expect(onPhone(content, { covers: onlyTheAccessory }).bottom).toBe(
+      874 - 720
+    );
+  });
+
+  describe('on the iPhone Duo', () => {
+    const duoWithTabs = {
+      ...duoTabs,
+      systemBars: duoTabs.systemBars.map((bar) => ({ ...bar, owner: 7 })),
+    };
+    const regions = buildRegions(duoWithTabs);
+    const bands = buildRegions(duoWithTabs, { refine: false });
+    const onDuo = (
+      element: Rect,
+      options: Partial<Parameters<typeof safeAreaViewInsets>[1]> = {}
+    ) => safeAreaViewInsets(element, { regions, bands, bounds, ...options });
+
+    it('gives a sheet below the status cluster nothing in the column, even avoiding whole bands', () => {
+      const sheet = { x: 8, y: 255, width: 450, height: 423 };
+      expect(onDuo(sheet, { covers: nothingBelow, visible: sheet })).toEqual({
+        top: 0,
+        right: 0,
+        bottom: 678 - 644,
+        left: 0,
+      });
+    });
+
+    it('keeps the status cluster for a modal that reaches it', () => {
+      const modal = { x: 0, y: 0, width: 466, height: 678 };
+      expect(onDuo(modal, { covers: nothingBelow, visible: modal }).right).toBe(
+        84
+      );
+      expect(
+        onDuo(
+          { x: 316, y: 500, width: 122, height: 24 },
+          { covers: nothingBelow, visible: modal, granular: true }
+        ).right
+      ).toBe(0);
+    });
+
+    it('keeps the column for the screen beneath, where the tab bar is on top', () => {
+      const card = { x: 16, y: 230, width: 434, height: 180 };
+      expect(onDuo(card).right).toBe(450 - 382);
+      expect(
+        onDuo({ x: 316, y: 500, width: 122, height: 24 }, { granular: true })
+          .right
+      ).toBe(438 - 382);
+    });
+  });
+
+  describe('where a view can be seen', () => {
+    it('only counts the part inside its clipping ancestors', () => {
+      // A row half scrolled out of a list that ends above the tab bar.
+      const list = { x: 0, y: 100, width: 402, height: 600 };
+      const row = { x: 0, y: 650, width: 402, height: 100 };
+      expect(onPhone(row, { granular: true }).bottom).toBe(750 - 720);
+      expect(onPhone(row, { granular: true, visible: list }).bottom).toBe(0);
+    });
+
+    it('sweeps scrolling content over its scroll view, not the whole screen', () => {
+      const regions = buildRegions(duo);
+      const bands = buildRegions(duo, { refine: false });
+      const item = { x: 16, y: 300, width: 434, height: 40 };
+      const inside = (visible: Rect) =>
+        safeAreaViewInsets(item, {
+          regions,
+          bands,
+          bounds,
+          scroll: { vertical: true, horizontal: false },
+          visible,
+        }).right;
+      // A carousel in the free stretch of the column never scrolls its items under anything there.
+      expect(inside({ x: 0, y: 260, width: 466, height: 120 })).toBe(0);
+      // A list that reaches up to the status cluster does.
+      expect(inside({ x: 0, y: 100, width: 466, height: 400 })).toBe(450 - 382);
+    });
+  });
+});
+
+describe('the native side', () => {
+  const regions = buildRegions(duoTabs);
+
+  it('gets the regions to avoid, already filtered and grown', () => {
+    expect(
+      trackedRegions(regions, { avoid: ['status', 'systemBar'], spacing: 4 })
     ).toEqual([
-      { x: 378, y: -4, width: 92, height: 182, edge: 2 },
-      { x: 378, y: 488, width: 92, height: 170, edge: 2 },
+      { x: 378, y: -4, width: 92, height: 182, edge: 2, owner: 0, band: false },
+      {
+        x: 378,
+        y: 488,
+        width: 92,
+        height: 170,
+        edge: 2,
+        owner: 0,
+        band: false,
+      },
     ]);
   });
 
-  it('keeps every kind it avoids, and the scrolling edges when not scrolling', () => {
+  it('gets every kind it avoids', () => {
     expect(trackedRegions(regions, {}).map((r) => r.edge)).toEqual([2, 2, 3]);
     expect(trackedRegions(regions, { avoid: [] })).toEqual([]);
   });
@@ -450,11 +647,53 @@ describe('dynamic elements', () => {
     ).toEqual([0]);
   });
 
-  it('encodes edges as bits', () => {
+  it('gets edges as bits', () => {
     expect(edgeMask(['top', 'right', 'bottom', 'left'])).toBe(15);
     expect(edgeMask(['left', 'right'])).toBe(10);
     expect(edgeMask(['right', 'right'])).toBe(2);
     expect(edgeMask([])).toBe(0);
+  });
+});
+
+describe('edgeModes', () => {
+  it('makes every edge additive by default, like react-native-safe-area-context', () => {
+    expect(edgeModes(undefined)).toEqual({
+      top: 'additive',
+      right: 'additive',
+      bottom: 'additive',
+      left: 'additive',
+    });
+  });
+
+  it('turns a list into additive edges, and the rest off', () => {
+    expect(edgeModes(['left', 'right'])).toEqual({
+      top: 'off',
+      right: 'additive',
+      bottom: 'off',
+      left: 'additive',
+    });
+  });
+
+  it('takes an object as is, with missing edges off', () => {
+    const modes = edgeModes({ top: 'maximum', bottom: 'additive' });
+    expect(modes).toEqual({
+      top: 'maximum',
+      right: 'off',
+      bottom: 'additive',
+      left: 'off',
+    });
+    expect(activeEdges(modes)).toEqual(['top', 'bottom']);
+  });
+});
+
+describe('withoutMargins', () => {
+  it('measures a view as it was before the margin it got moved it in', () => {
+    expect(
+      withoutMargins(
+        { x: 0, y: 10, width: 382, height: 60 },
+        { top: 0, right: 84, bottom: 0, left: 0 }
+      )
+    ).toEqual({ x: 0, y: 10, width: 466, height: 60 });
   });
 });
 

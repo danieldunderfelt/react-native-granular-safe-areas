@@ -1,10 +1,12 @@
 import { createNativeBottomTabNavigator } from '@react-navigation/bottom-tabs/unstable';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Platform } from 'react-native';
-import { GranularSafeAreaProvider } from 'react-native-granular-safe-areas';
+import { useNavigation } from '@react-navigation/native';
+import { OverlayContent } from './overlays';
 import { HeaderItemsScreen } from './screens/HeaderItemsScreen';
 import { HomeScreen } from './screens/HomeScreen';
 import { MarkersScreen } from './screens/MarkersScreen';
+import { MovingScreen } from './screens/MovingScreen';
 import { ProbeScreen } from './screens/ProbeScreen';
 import { TripDetailsScreen } from './screens/TripDetailsScreen';
 import { TripScreen } from './screens/TripScreen';
@@ -17,10 +19,12 @@ export const linking = {
       Trip: 'trip',
       TripDetails: 'trip/:code',
       Markers: 'markers',
+      Moving: 'moving',
       Tabs: 'tabs',
       HeaderItems: 'header-items',
       Probe: 'probe',
       Sheet: 'sheet',
+      Modal: 'modal',
     },
   },
 };
@@ -30,10 +34,12 @@ export type RootStackParamList = {
   Trip: undefined;
   TripDetails: { code: string };
   Markers: undefined;
+  Moving: undefined;
   Tabs: undefined;
   HeaderItems: undefined;
   Probe: undefined;
   Sheet: undefined;
+  Modal: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -72,12 +78,20 @@ function TabsScreen() {
   );
 }
 
-/** A sheet is presented in its own view controller, so it gets its own provider. */
+/**
+ * A native sheet. It's presented outside the app's root view, on top of the screen it came from, and needs no provider
+ * of its own: its content ignores that screen's tab bar and accessories, and keeps clear of the home indicator.
+ */
 function SheetScreen() {
+  const navigation = useNavigation();
+  return <OverlayContent title="Form sheet" onClose={navigation.goBack} />;
+}
+
+/** A full-screen modal: on the iPhone Duo it reaches the status cluster, which it keeps clear of. */
+function ModalScreen() {
+  const navigation = useNavigation();
   return (
-    <GranularSafeAreaProvider>
-      <ProbeScreen />
-    </GranularSafeAreaProvider>
+    <OverlayContent title="Full-screen modal" onClose={navigation.goBack} />
   );
 }
 
@@ -105,6 +119,11 @@ export function RootStack() {
         options={{ title: 'Edge markers' }}
       />
       <Stack.Screen
+        name="Moving"
+        component={MovingScreen}
+        options={{ title: 'Moving elements' }}
+      />
+      <Stack.Screen
         name="Tabs"
         component={TabsScreen}
         options={{ headerShown: false }}
@@ -118,7 +137,16 @@ export function RootStack() {
       <Stack.Screen
         name="Sheet"
         component={SheetScreen}
-        options={{ presentation: 'formSheet', sheetAllowedDetents: [0.6, 1] }}
+        options={{
+          presentation: 'formSheet',
+          sheetAllowedDetents: [0.6, 1],
+          headerShown: false,
+        }}
+      />
+      <Stack.Screen
+        name="Modal"
+        component={ModalScreen}
+        options={{ presentation: 'fullScreenModal', headerShown: false }}
       />
     </Stack.Navigator>
   );

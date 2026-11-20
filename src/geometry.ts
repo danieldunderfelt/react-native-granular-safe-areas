@@ -1,10 +1,14 @@
 import type {
   Edge,
   EdgeInsets,
+  EdgeMode,
+  Edges,
   GranularSafeAreaMetrics,
   Rect,
   SafeAreaRegion,
   SafeAreaRegionKind,
+  ScrollAxes,
+  SystemBarFrame,
 } from './types';
 
 export const EDGES: readonly Edge[] = ['top', 'right', 'bottom', 'left'];
@@ -14,6 +18,7 @@ export const DEFAULT_AVOID: readonly SafeAreaRegionKind[] = [
   'status',
   'camera',
   'systemBar',
+  'accessory',
 ];
 
 export const ZERO_INSETS: EdgeInsets = Object.freeze({
@@ -38,12 +43,12 @@ export function overlaps(a: Rect, b: Rect): boolean {
   return a.x < maxX(b) && b.x < maxX(a) && a.y < maxY(b) && b.y < maxY(a);
 }
 
-function contains(outer: Rect, inner: Rect): boolean {
+function contains(outer: Rect, inner: Rect, tolerance = 0): boolean {
   return (
-    inner.x >= outer.x &&
-    inner.y >= outer.y &&
-    maxX(inner) <= maxX(outer) &&
-    maxY(inner) <= maxY(outer)
+    inner.x >= outer.x - tolerance &&
+    inner.y >= outer.y - tolerance &&
+    maxX(inner) <= maxX(outer) + tolerance &&
+    maxY(inner) <= maxY(outer) + tolerance
   );
 }
 
@@ -206,6 +211,7 @@ export function buildRegions(
       kind: 'systemBar',
       edge: attachedEdge(frame, width, height, insets),
       frame,
+      ...ownerOf(bar),
     });
   }
 
@@ -274,6 +280,7 @@ function refineBand(
         width: band.width,
         height: clipped.height,
       },
+      ...ownerOf(bar),
     });
   }
   return { regions, bars: verticalBars };
@@ -311,7 +318,10 @@ function statusClusterBottom(
 }
 
 /** The bars and bar items in the column: centered in the band and no wider than it. Bars that cross it are not. */
-function columnBars(band: Rect, metrics: GranularSafeAreaMetrics): Rect[] {
+function columnBars(
+  band: Rect,
+  metrics: GranularSafeAreaMetrics
+): SystemBarFrame[] {
   return metrics.systemBars.filter((bar) => {
     const centerX = bar.x + bar.width / 2;
     return (
@@ -393,6 +403,10 @@ export function verticalBarBackButtonFrame(bar: VerticalBar): Rect | null {
     height: size,
   };
   return bar.items.some((item) => overlaps(item, frame)) ? null : frame;
+}
+
+function ownerOf(bar: SystemBarFrame): { owner?: number } {
+  return bar.owner !== undefined ? { owner: bar.owner } : {};
 }
 
 function rectOf(r: Rect): Rect {
@@ -479,26 +493,6 @@ export function metricsFromInsets(
   };
 }
 
-/**
- * For content inside a scroll view: regions on the cross-axis edges (and floating ones) are stretched along the whole
- * scroll axis, because scrolling content passes under all of them. Regions on the scrolling edges are dropped; the
- * scroll view's content inset handles those.
- */
-export function sweepRegions(
-  regions: readonly SafeAreaRegion[],
-  axis: 'vertical' | 'horizontal',
-  width: number,
-  height: number
-): SafeAreaRegion[] {
-  return withoutScrollingEdges(regions, axis).map((r) => ({
-    ...r,
-    frame:
-      axis === 'vertical'
-        ? { x: r.frame.x, y: 0, width: r.frame.width, height }
-        : { x: 0, y: r.frame.y, width, height: r.frame.height },
-  }));
-}
-
 /** Regions on the edges content scrolls towards are the scroll view's content inset's job, not the element's. */
 export function withoutScrollingEdges(
   regions: readonly SafeAreaRegion[],
@@ -510,22 +504,116 @@ export function withoutScrollingEdges(
 }
 
 /**
- * Puts scrolling content where it is on screen along the scroll axis, to measure it against {@link sweepRegions}.
- * Those span the whole axis, so only the cross axis matters, and content measured while it was scrolled out of view
- * (further down a list) gets the same insets as when it is visible.
+ * Stretches scrolling content along the scroll axis, over the whole area it can be seen in (its scroll view). Its
+ * position along that axis isn't fixed, so it has to clear everything it can scroll under, and content measured while
+ * it's out of view (further down a list) gets the inset it will need once it's on screen.
  */
 export function sweepElement(
   rect: Rect,
   axis: 'vertical' | 'horizontal',
-  bounds: { width: number; height: number }
+  area: Rect
 ): Rect {
   return axis === 'vertical'
-    ? { x: rect.x, y: 0, width: rect.width, height: bounds.height }
-    : { x: 0, y: rect.y, width: bounds.width, height: rect.height };
+    ? { x: rect.x, y: area.y, width: rect.width, height: area.height }
+    : { x: area.x, y: rect.y, width: area.width, height: rect.height };
 }
 
-/** A region as a dynamic view's native side takes it. `edge`: 0 floating, then 1 top, 2 right, 3 bottom, 4 left. */
-export type TrackedRegion = Rect & { edge: number };
+export const NO_SCROLL: ScrollAxes = Object.freeze({
+  vertical: false,
+  horizontal: false,
+});
+
+export type SafeAreaViewInsetsOptions = ElementInsetsOptions & {
+  /** The regions, broken down as far as the platform allows. */
+  regions: readonly SafeAreaRegion[];
+  /** The same, with every inset band whole: what a regular safe area avoids. */
+  bands: readonly SafeAreaRegion[];
+  granular?: boolean;
+  dynamic?: boolean;
+  /** The scroll views around the element. */
+  scroll?: ScrollAxes;
+  /**
+   * Whether the app UI drawn by `owner` (a bar, an accessory) is drawn on top of the element. Defaults to yes. System
+   * UI has no owner and always is.
+   */
+  covers?: (owner: number) => boolean;
+};
+
+const ALWAYS = () => true;
+
+/**
+ * The insets a `SafeAreaView` needs at `element`. It avoids what can cover it: system UI, and app UI drawn on top of
+ * it (a sheet ignores the tab bar beneath it). Only where it can be seen counts: `visible`, its clipping ancestors.
+ *
+ * - By default it avoids whole bands. A band runs the full length of its edge, so the view stays clear of the OS UI
+ *   wherever it moves along it. A band only counts if something in it that covers the view reaches where the view can
+ *   be seen: on the iPhone Duo, a sheet that starts below the status cluster has nothing to avoid in the column.
+ * - `granular` avoids only the regions it overlaps where it is. In a scroll view its position along the scroll axis
+ *   isn't fixed, so it avoids whole bands there.
+ * - `dynamic` avoids only the regions it overlaps right now; it's measured again whenever it moves.
+ *
+ * In a scroll view, the regions on the edges it scrolls towards are left to the scroll view's content inset, and a
+ * view that isn't dynamic is measured as if it covered the whole visible part of the scroll axis.
+ * GSASafeAreaView.mm does the same natively; keep the two in step.
+ */
+export function safeAreaViewInsets(
+  element: Rect,
+  {
+    regions,
+    bands,
+    granular = false,
+    dynamic = false,
+    scroll = NO_SCROLL,
+    covers = ALWAYS,
+    ...options
+  }: SafeAreaViewInsetsOptions
+): EdgeInsets {
+  const area = visibleArea(options);
+  const covering = (region: SafeAreaRegion) =>
+    region.owner === undefined || covers(region.owner);
+  const scrolling = scroll.vertical || scroll.horizontal;
+  let avoiding: SafeAreaRegion[];
+  if (dynamic || (granular && !scrolling)) {
+    avoiding = regions.filter(covering);
+  } else {
+    // A band counts when something in it that covers the element reaches where the element can be seen. Without a
+    // breakdown, the band is all there is: the system draws it, on top of everything.
+    const inside = regions.filter(
+      (region) => covering(region) && overlaps(region.frame, area)
+    );
+    avoiding = bands.filter(
+      (band) =>
+        covering(band) &&
+        (band.kind !== 'inset' ||
+          inside.some((region) => contains(band.frame, region.frame, 0.5)))
+    );
+  }
+  let rect = element;
+  for (const axis of ['vertical', 'horizontal'] as const) {
+    if (!scroll[axis]) continue;
+    avoiding = withoutScrollingEdges(avoiding, axis);
+    if (!dynamic) rect = sweepElement(rect, axis, area);
+  }
+  return computeElementInsets(rect, avoiding, { ...options, visible: area });
+}
+
+/** Where an element can be seen: its `visible` area, or else the whole provider. */
+function visibleArea({ bounds, visible }: ElementInsetsOptions): Rect {
+  const all = { x: 0, y: 0, width: bounds.width, height: bounds.height };
+  return (visible && intersection(visible, all)) ?? (visible ? EMPTY : all);
+}
+
+const EMPTY: Rect = Object.freeze({ x: 0, y: 0, width: 0, height: 0 });
+
+/**
+ * A region as the native side takes it. `edge`: 0 floating, then 1 top, 2 right, 3 bottom, 4 left. `owner`: the view
+ * drawing it, 0 for system UI. `band`: a whole inset band.
+ */
+export type TrackedRegion = Rect & {
+  edge: number;
+  owner: number;
+  band: boolean;
+};
 
 const EDGE_CODES: Record<Edge, number> = {
   top: 1,
@@ -534,28 +622,36 @@ const EDGE_CODES: Record<Edge, number> = {
   left: 4,
 };
 
-/**
- * The regions a dynamic element avoids, for the native side to test against the element's live position: only the
- * kinds in `avoid`, grown by `spacing`, and for scrolling content, without the regions on the scrolling edges.
- */
+/** The regions to hand the native side: only the kinds in `avoid`, grown by `spacing`. */
 export function trackedRegions(
   regions: readonly SafeAreaRegion[],
   {
     avoid = DEFAULT_AVOID,
     spacing = 0,
-    scrollable,
-  }: {
-    avoid?: readonly SafeAreaRegionKind[];
-    spacing?: number;
-    scrollable?: 'vertical' | 'horizontal';
-  }
+  }: { avoid?: readonly SafeAreaRegionKind[]; spacing?: number }
 ): TrackedRegion[] {
-  return (scrollable ? withoutScrollingEdges(regions, scrollable) : regions)
+  return regions
     .filter((region) => avoid.includes(region.kind))
     .map((region) => ({
       ...(spacing > 0 ? expand(region.frame, spacing) : rectOf(region.frame)),
       edge: region.edge ? EDGE_CODES[region.edge] : 0,
+      owner: region.owner ?? 0,
+      band: region.kind === 'inset',
     }));
+}
+
+/** The provider edge a rectangle is closest to: the one an accessory belongs to, unless it says otherwise. */
+export function nearestEdge(
+  frame: Rect,
+  bounds: { width: number; height: number }
+): Edge {
+  const distances: [Edge, number][] = [
+    ['bottom', bounds.height - maxY(frame)],
+    ['top', frame.y],
+    ['right', bounds.width - maxX(frame)],
+    ['left', frame.x],
+  ];
+  return distances.reduce((best, next) => (next[1] < best[1] ? next : best))[0];
 }
 
 /** Edges as bits, for the native side: 1 top, 2 right, 4 bottom, 8 left. */
@@ -565,12 +661,70 @@ export function edgeMask(edges: readonly Edge[]): number {
   return mask;
 }
 
+const ALL_ADDITIVE: Readonly<Record<Edge, EdgeMode>> = Object.freeze({
+  top: 'additive',
+  right: 'additive',
+  bottom: 'additive',
+  left: 'additive',
+});
+
+function isEdgeList(edges: Edges): edges is readonly Edge[] {
+  return Array.isArray(edges);
+}
+
+/**
+ * `edges` as react-native-safe-area-context takes them, on every edge: a list of edges (each `additive`), or an
+ * object with `additive`, `maximum` or `off` per edge (missing ones `off`). All four are `additive` by default.
+ */
+export function edgeModes(edges?: Edges): Readonly<Record<Edge, EdgeMode>> {
+  if (edges == null) return ALL_ADDITIVE;
+  if (isEdgeList(edges)) {
+    const modes: Record<Edge, EdgeMode> = {
+      top: 'off',
+      right: 'off',
+      bottom: 'off',
+      left: 'off',
+    };
+    for (const edge of edges) modes[edge] = 'additive';
+    return modes;
+  }
+  return {
+    top: edges.top ?? 'off',
+    right: edges.right ?? 'off',
+    bottom: edges.bottom ?? 'off',
+    left: edges.left ?? 'off',
+  };
+}
+
+/** The edges that are not `off`. */
+export function activeEdges(modes: Readonly<Record<Edge, EdgeMode>>): Edge[] {
+  return EDGES.filter((edge) => modes[edge] !== 'off');
+}
+
+/**
+ * Where an element would be without the margin it got from `mode="margin"`, which moved each of its edges in by that
+ * much. Measuring that instead keeps the margin from feeding back into the next result.
+ */
+export function withoutMargins(rect: Rect, margins: EdgeInsets): Rect {
+  return {
+    x: rect.x - margins.left,
+    y: rect.y - margins.top,
+    width: rect.width + margins.left + margins.right,
+    height: rect.height + margins.top + margins.bottom,
+  };
+}
+
 export type ElementInsetsOptions = {
   edges?: readonly Edge[];
   avoid?: readonly SafeAreaRegionKind[];
   spacing?: number;
   /** The provider's size. The element is clipped to it first, so the result stays bounded. */
   bounds: { width: number; height: number };
+  /**
+   * Where the element can be seen at all: inside its clipping ancestors, such as a sheet or a scroll view. Only that
+   * part of it counts. Defaults to the whole provider.
+   */
+  visible?: Rect;
 };
 
 /**
@@ -585,17 +739,13 @@ export function computeElementInsets(
     avoid = DEFAULT_AVOID,
     spacing = 0,
     bounds,
+    visible,
   }: ElementInsetsOptions
 ): EdgeInsets {
   const out: EdgeInsets = { ...ZERO_INSETS };
-  // Clipping makes the result independent of any part of the element that is off-screen, and bounds every inset by
+  // Clipping makes the result independent of any part of the element that can't be seen, and bounds every inset by
   // the provider's size, so padding applied to an auto-sized element can't keep growing it.
-  const el = intersection(element, {
-    x: 0,
-    y: 0,
-    width: bounds.width,
-    height: bounds.height,
-  });
+  const el = intersection(element, visibleArea({ bounds, visible }));
   if (!el) return out;
 
   for (const region of regions) {
@@ -711,6 +861,7 @@ export function regionsEqual(
         other !== undefined &&
         region.kind === other.kind &&
         region.edge === other.edge &&
+        region.owner === other.owner &&
         rectsEqual(region.frame, other.frame)
       );
     })

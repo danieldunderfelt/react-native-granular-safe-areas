@@ -6,13 +6,12 @@ import {
   useSyncExternalStore,
 } from 'react';
 import {
-  computeElementInsets,
+  activeEdges,
   DEFAULT_AVOID,
-  EDGES,
+  edgeModes,
   insetsEqual,
   placementToRect,
-  sweepElement,
-  sweepRegions,
+  safeAreaViewInsets,
   ZERO_INSETS,
   type GranularPlacement,
 } from './geometry';
@@ -21,6 +20,7 @@ import type { GranularSafeAreaStore } from './store';
 import type {
   Edge,
   EdgeInsets,
+  Edges,
   GranularInsetsOptions,
   GranularSafeAreaMetrics,
   SafeAreaRegion,
@@ -57,48 +57,62 @@ export function useGranularSafeAreaMetrics(): GranularSafeAreaMetrics | null {
 
 const WHOLE_PROVIDER: GranularPlacement = {};
 
+export type SafeAreaInsetsForOptions = GranularInsetsOptions & {
+  /** Edges the element may be pushed in from. Defaults to all four. */
+  edges?: Edges;
+  /**
+   * The scroll axis, when the element is in a scroll view: nothing is measured that could tell. The edges it scrolls
+   * towards are then left to the scroll view's content inset, and it's treated as covering the whole axis.
+   */
+  scrollable?: 'vertical' | 'horizontal';
+};
+
 /**
- * Manual mode: the insets an element needs at a position you describe, for you to apply, like `useSafeAreaInsets()`.
- * Nothing is measured, so it costs nothing per frame. The component re-renders only when these insets change.
+ * The insets an element needs at a position you describe, for you to apply, like `useSafeAreaInsets()`. For layouts
+ * `SafeAreaView` can't express, such as a header whose height depends on the insets. Nothing is measured, and the
+ * component re-renders only when these insets change.
  *
- * Describe the position the way you would absolutely position the element in the provider (usually the screen):
+ * Describe the position the way you would absolutely position the element on the screen (in the provider):
  *
  * ```tsx
- * const insets = useGranularSafeAreaInsets({ top: 0, height: 56 }); // a header strip
- * <View style={{ height: 56 + insets.top, paddingTop: insets.top, paddingRight: 16 + insets.right }} />
+ * const { top } = useSafeAreaInsets();
+ * const header = useSafeAreaInsetsFor({ top: 0, height: top + 56 });
+ * <View style={{ height: top + 56, paddingTop: header.top, paddingRight: 16 + header.right }} />
  * ```
  *
- * With no placement it covers the whole provider, which gives the same insets as `useSafeAreaInsets()`.
+ * Like `SafeAreaView`, it avoids whole bands unless `granular` is set. With no placement it covers the whole screen,
+ * which gives the same insets as `useSafeAreaInsets()`.
  */
-export function useGranularSafeAreaInsets(
+export function useSafeAreaInsetsFor(
   placement: GranularPlacement = WHOLE_PROVIDER,
-  options: GranularInsetsOptions = {}
+  options: SafeAreaInsetsForOptions = {}
 ): EdgeInsets {
   const store = useGranularSafeAreaStore();
   const { top, right, bottom, left, width, height } = placement;
-  const edgesKey = (options.edges ?? EDGES).join(',');
+  const edgesKey = activeEdges(edgeModes(options.edges)).join(',');
   const avoidKey = (options.avoid ?? DEFAULT_AVOID).join(',');
-  const { spacing = 0, scrollable } = options;
+  const { spacing = 0, granular = false, scrollable } = options;
 
   const compute = useCallback((): EdgeInsets => {
-    const { metrics, regions } = store.getSnapshot();
+    const { metrics, regions, bands } = store.getSnapshot();
     if (!metrics) return ZERO_INSETS;
     const rect = placementToRect(
       { top, right, bottom, left, width, height },
       metrics
     );
-    return computeElementInsets(
-      scrollable ? sweepElement(rect, scrollable, metrics) : rect,
-      scrollable
-        ? sweepRegions(regions, scrollable, metrics.width, metrics.height)
-        : regions,
-      {
-        edges: edgesKey.split(',') as Edge[],
-        avoid: avoidKey.split(',') as SafeAreaRegionKind[],
-        spacing,
-        bounds: metrics,
-      }
-    );
+    return safeAreaViewInsets(rect, {
+      regions,
+      bands,
+      granular,
+      scroll: {
+        vertical: scrollable === 'vertical',
+        horizontal: scrollable === 'horizontal',
+      },
+      edges: edgesKey ? (edgesKey.split(',') as Edge[]) : [],
+      avoid: avoidKey.split(',') as SafeAreaRegionKind[],
+      spacing,
+      bounds: metrics,
+    });
   }, [
     store,
     top,
@@ -110,6 +124,7 @@ export function useGranularSafeAreaInsets(
     edgesKey,
     avoidKey,
     spacing,
+    granular,
     scrollable,
   ]);
 

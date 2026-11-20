@@ -51,7 +51,8 @@ Expo: use a development build (`npx expo run:ios`); there is no config plugin to
 
 ## Usage
 
-Render a `GranularSafeAreaProvider` inside `SafeAreaProvider`, near the root:
+Render a `GranularSafeAreaProvider` inside `SafeAreaProvider`, near the root. One is enough: sheets and modals don't
+need their own. (Both go away soon: see [docs/api.md](docs/api.md) for where the API is heading.)
 
 ```tsx
 import {
@@ -70,79 +71,104 @@ export default function App() {
 }
 ```
 
-There are two ways to use it.
-
-- **Automatic**: the library measures an element and applies the insets it needs. Use `GranularSafeAreaView`, or
-  `useGranularSafeArea` to get props for any element.
-- **Manual**: you describe where an element is and get its insets back to apply yourself, like `useSafeAreaInsets()`.
-  Use `useGranularSafeAreaInsets`.
-
-Both follow the system UI as it changes; see [Staying in sync](#staying-in-sync).
-
-### Automatic
-
-`GranularSafeAreaView` takes the same `edges` as `SafeAreaView`, but only applies an inset where the view actually
-overlaps something:
+`SafeAreaView` from this package is a drop-in for react-native-safe-area-context's, with the same props. Switching
+over means changing the import: by default a view keeps clear of the whole inset band on each edge it overlaps, like
+the regular one. Then you opt the views that benefit into granular avoidance, one by one.
 
 ```tsx
-import { GranularSafeAreaView } from 'react-native-granular-safe-areas';
+import { SafeAreaView } from 'react-native-granular-safe-areas';
 
-// A header: the background stays full width, the button moves in next to the status cluster.
-<GranularSafeAreaView edges={['top', 'left', 'right']} style={styles.header}>
-  <Text style={styles.title}>Please sign in again</Text>
-  <Button title="Sign in" />
-</GranularSafeAreaView>
+// A list row: kept clear of the whole side column, so it never goes under the OS UI however far it scrolls.
+<SafeAreaView edges={['left', 'right']} style={styles.row}>…</SafeAreaView>
 
-// A floating button: moved, not padded, and only if a system bar is beside it.
-<GranularSafeAreaView mode="offset" spacing={8} style={styles.fab}>
-  <ScanButton />
-</GranularSafeAreaView>
+// A header: the background runs under the status cluster, the content moves in next to it.
+<SafeAreaView granular edges={['top', 'left', 'right']} style={styles.header}>…</SafeAreaView>
+
+// A floating button: moved as a whole, and only if something is actually beside it.
+<SafeAreaView granular mode="offset" spacing={8} style={styles.fab}>…</SafeAreaView>
+
+// A badge on a scrolling card: moves in only while it passes the status cluster or a bar.
+<SafeAreaView dynamic mode="offset" edges={['left', 'right']} style={styles.badge}>…</SafeAreaView>
 ```
 
-For any other element, `useGranularSafeArea` returns the props to spread onto it: a `ref` to measure it, an
-`onLayout`, and the `style` with the insets applied. Pass the element's own style in, so padding is added to its padding.
+### Bands, granular and dynamic
 
-```tsx
-import { useGranularSafeArea } from 'react-native-granular-safe-areas';
+Every view measures where it is and works out the inset it needs there. What it avoids, and when it measures, is up to
+you:
 
-function ScanButton() {
-  const granular = useGranularSafeArea({ mode: 'offset', spacing: 8, style: styles.fab });
-  return (
-    <Pressable {...granular.props} onPress={scan}>
-      <QrIcon />
-    </Pressable>
-  );
-}
-```
+| | Avoids | Measured | Use it for |
+| --- | --- | --- | --- |
+| Default | The whole inset band on each edge it overlaps (on the iPhone Duo, the full side column), and anything outside the bands, such as a transparent navigation bar | When laid out | Most things, and anything in a scroll view that shouldn't move around |
+| `granular` | Only the regions it overlaps where it's laid out: the status cluster, a camera, a bar | When laid out | Fixed UI: headers, floating buttons, bottom bars, overlays, maps |
+| `dynamic` | Only the regions it overlaps right now | As it moves | Content that moves past the OS UI and should dodge it, such as a badge on a scrolling card |
 
-The `ref` must reach a host view (`View`, `Pressable`, `Text` and anything else that forwards its ref). If the element
-needs your own `onLayout`, pass it in the options rather than overriding the prop. `style` has to be a plain style:
-for `Pressable`'s `({ pressed }) => style`, put the pressed styling on an inner view, or use the manual hook. `granular.insets` holds the applied
-insets, and `granular.remeasure()` measures again after the element moved without a layout change, e.g. after an
-animated transform.
+"When laid out" means when the view mounts, when its layout changes, and when the OS UI changes (rotation, folding, a
+bar appearing, the Dynamic Island growing). Movement is a design decision, so a view that isn't `dynamic` never moves
+as you scroll or animate. A screen sliding in or out with navigation counts as moving: the view is measured where the
+screen comes to rest, and before the first frame from React Native's layout, so nothing jumps as it arrives.
 
-| `mode` | What moves | Use it for |
+A band runs the full length of its edge, so a default view stays clear of the OS UI wherever it moves along that edge:
+a row in a list keeps clear of the side column however far it scrolls, and nothing reflows while you scroll. This
+follows Apple's guidance for scrolling content.
+
+Scroll views are detected (any React Native `ScrollView`, so `FlatList`, `SectionList`, FlashList and the rest too):
+
+- The bands on the edges the content scrolls towards are left to the scroll view's content inset. Otherwise a row
+  measured at the bottom would keep the home indicator's inset as it scrolls up.
+- A view that is out of sight when it's measured, further down the list, gets the inset it will need on screen.
+- `granular` acts like the default there, because the view's position along the scroll axis isn't fixed. Use
+  `dynamic` for granular content in a scroll view.
+- A pager (`pagingEnabled`) is measured where its pages come to rest.
+
+On a device the library doesn't fully understand, there's nothing finer than the bands, so all three behave like a
+regular safe area.
+
+### Applying the insets
+
+| `mode` | What happens | Use it for |
 | --- | --- | --- |
-| `padding` (default) | The children. The element's box and background stay put. | Containers sized by their parent: headers, bottom bars, rows |
-| `offset` | The whole element, with a transform | Floating buttons, badges, anything sized by its content |
+| `padding` (default) | The children move in; the view's box and background stay | Containers sized by their parent: headers, bottom bars, rows |
+| `margin` | The view's box moves in, and so does what's laid out next to it | Like safe-area-context's `margin` mode |
+| `offset` | The whole view moves, with a transform on top of its own | Floating buttons, badges, anything sized by its content |
+| `none` | Nothing; read the insets with `onInsetsChange` | Layouts of your own |
 
-What it costs: one synchronous layout read (`getBoundingClientRect`) when the element mounts, when its layout changes,
-and when the system UI changes. Nothing runs per frame, no native view is added per element, and the element
-re-renders only when its insets change.
+`edges` works as in react-native-safe-area-context: a list of edges, or an object with `'additive'` (add the inset to
+the view's own padding or margin), `'maximum'` (use whichever is larger) or `'off'` per edge.
 
-### Manual
+On iOS every `SafeAreaView` is a native view that measures itself, and applies `offset` itself, in the same frame.
+Padding and margin change layout, which only React Native can do, so when they change, JS applies them a frame or two
+later. A view is measured as laid out, without its own `transform`, so animating it never feeds back into its insets.
 
-`useGranularSafeAreaInsets` gives the insets for a position you describe, the way you would absolutely position the
-element in the provider (usually the screen). Nothing is measured, and the component re-renders only when those
-insets change.
+### Moving content
+
+`dynamic` makes a view follow its position as it moves, whatever moves it: scrolling, layout changes, gestures, screen
+transitions, and animations from Reanimated or Animated's native driver. On iOS it observes the geometry of every view
+between itself and the provider, and measures itself again in the same frame as one of them moves. Nothing polls, and
+nothing runs in JavaScript while it moves. In a scroll view it ignores the regions on the scrolling edges, so it
+doesn't stick under the home indicator as it scrolls past.
+
+Use `offset` for moving content: it's applied natively, in the same frame. `padding` and `margin` change layout a frame
+or two after the view moves, and the layout change ripples to everything around it.
+
+What it costs: one coordinate conversion, about a microsecond, whenever the view or one of its ancestors moves, and
+after each React Native mounting transaction (for every `SafeAreaView`). A list with 300 granular views, half of them
+dynamic, scrolled as fast as it goes, spends 1 to 4% of the main thread on them on the iPhone Duo simulator.
+
+On the web, a dynamic view measures again on every frame something scrolls. On Android, where the regions are still
+plain bands, it behaves like a granular one.
+
+### Insets for a layout of your own
+
+`useSafeAreaInsetsFor` gives the insets for a position you describe, for you to apply yourself, like
+`useSafeAreaInsets()`. Nothing is measured, and the component re-renders only when those insets change.
 
 ```tsx
-import { useGranularSafeAreaInsets, useSafeAreaInsets } from 'react-native-granular-safe-areas';
+import { useSafeAreaInsets, useSafeAreaInsetsFor } from 'react-native-granular-safe-areas';
 
 function Header() {
   const { top } = useSafeAreaInsets();
   // A full-width strip at the top. On the Duo, `right` is 84 only because the status cluster is beside it.
-  const insets = useGranularSafeAreaInsets({ top: 0, height: top + 56 });
+  const insets = useSafeAreaInsetsFor({ top: 0, height: top + 56 }, { granular: true });
   return (
     <View style={{ height: top + 56, paddingTop: insets.top, paddingRight: 16 + insets.right }}>
       ...
@@ -151,86 +177,35 @@ function Header() {
 }
 
 // A floating button 16 pt from the right edge and 120 pt from the bottom.
-const fab = useGranularSafeAreaInsets({ right: 16, bottom: 120, width: 56, height: 56 });
+const fab = useSafeAreaInsetsFor({ right: 16, bottom: 120, width: 56, height: 56 }, { granular: true });
 <FAB style={{ position: 'absolute', right: 16 + fab.right, bottom: 120 + fab.bottom }} />
 ```
 
-Missing sides stretch to the provider's edges, so `{ top: 0, height: 56 }` is a full-width strip, and with no
-placement at all you get the same insets as `useSafeAreaInsets()`.
+Describe the position the way you would absolutely position the element in the provider (usually the screen). Missing
+sides stretch to the provider's edges, so `{ top: 0, height: 56 }` is a full-width strip, and with no placement at all
+you get the same insets as `useSafeAreaInsets()`. Nothing tells it the element is in a scroll view, so say so with
+`scrollable: 'vertical'` or `'horizontal'`.
 
 `useSafeAreaRegions()` returns the regions themselves, in the provider's coordinates, for layouts of your own:
 
 ```tsx
 const regions = useSafeAreaRegions();
-// [{ kind: 'status', edge: 'right', frame: { x: 382, y: 0, width: 84, height: 208 } }, ...]
+// [{ kind: 'status', edge: 'right', frame: { x: 382, y: 0, width: 84, height: 174 } }, ...]
 ```
-
-### Scrolling content
-
-Content in a scroll view passes under every region in the column as it scrolls, so a granular position is only right for
-one scroll offset. Mark it `scrollable` and it avoids the whole column, like a regular safe area. Regions on the
-scrolling edges are ignored; handle those with the scroll view's content inset, as usual.
-
-```tsx
-<ScrollView>
-  <GranularSafeAreaView scrollable="vertical" edges={['left', 'right']}>
-    {rows}
-  </GranularSafeAreaView>
-</ScrollView>
-```
-
-This follows Apple's guidance: full-width backgrounds and fixed UI, inset scrolling content.
-
-#### Following an element as it scrolls
-
-For a few elements you'll want more: a badge on a card should sit at the card's edge in the free stretch of the
-column, and move in only while it passes the status cluster or a bar. Make it `dynamic`:
-
-```tsx
-<ScrollView>
-  {trips.map((trip) => (
-    <Card key={trip.id}>
-      <GranularSafeAreaView dynamic scrollable="vertical" mode="offset" edges={['left', 'right']} style={styles.badge}>
-        <Text>Check-in open</Text>
-      </GranularSafeAreaView>
-    </Card>
-  ))}
-</ScrollView>
-```
-
-A dynamic view follows its own position and avoids only what it overlaps right now. With `scrollable` it ignores the
-regions on the scrolling edges, so it doesn't stick under the home indicator as it scrolls past.
-
-On iOS it does this natively, on the UI thread, with nothing running in JavaScript while it moves:
-
-- It observes the scroll views between itself and the provider, and applies its new position in the same frame as the
-  scroll.
-- It measures itself again after every React Native layout change, so it also follows content inserted above it, a
-  parent that resizes, and navigation.
-- `mode="offset"` is a transform the native view applies to itself, on top of any transform you give it.
-  `mode="padding"` changes layout, which only React Native can do, so the native side reports the insets and JS
-  applies them a frame or two later. Prefer `offset` for elements that move.
-
-Use it for the elements that need it, not whole lists: each dynamic view does one coordinate conversion per scroll
-frame. It doesn't follow native-driven animations of its ancestors (Animated with `useNativeDriver`, Reanimated) other
-than scrolling. On the web it measures again on every frame something scrolls. On Android, where the regions are
-still plain bands, it behaves like a regular `GranularSafeAreaView`.
-
-`dynamic` is a `GranularSafeAreaView` prop. Set it when the view mounts: changing it remounts the view.
 
 ### Options
-
-All of these work on `GranularSafeAreaView`, `useGranularSafeArea` and `useGranularSafeAreaInsets` (`mode` only on the
-first two).
 
 | Option | Default | |
 | --- | --- | --- |
 | `edges` | all four | Edges the element may be pushed in from |
-| `mode` | `'padding'` | See [Automatic](#automatic) |
+| `granular` | `false` | Avoid only the regions it overlaps, not whole bands |
+| `dynamic` | `false` | `SafeAreaView` only. Follow the view as it moves; implies `granular` |
+| `mode` | `'padding'` | `SafeAreaView` only. `padding`, `margin`, `offset` or `none` |
 | `spacing` | `0` | Extra clearance around each region, in points |
-| `avoid` | everything except `'fold'` | Region kinds to avoid: `inset`, `status`, `camera`, `systemBar`, `fold`. `[]` avoids nothing |
-| `scrollable` | – | `'vertical'` or `'horizontal'`; see [Scrolling content](#scrolling-content) |
-| `dynamic` | `false` | `GranularSafeAreaView` only. Follow the view as it scrolls or moves; see [Following an element as it scrolls](#following-an-element-as-it-scrolls) |
+| `avoid` | everything except `'fold'` | Region kinds to avoid: `inset`, `status`, `camera`, `systemBar`, `accessory`, `fold`. `[]` avoids nothing |
+| `underlying` | `false` | `SafeAreaView` only. Also avoid app UI drawn beneath the view; see [Sheets, modals and overlays](#sheets-modals-and-overlays-what-covers-a-view) |
+| `onInsetsChange` | | `SafeAreaView` only. Called with the view's insets, once measured and whenever they change |
+| `scrollable` | | `useSafeAreaInsetsFor` only. `'vertical'` or `'horizontal'` |
 
 Folds aren't avoided by default: a full-width header that spans a book fold shouldn't be squeezed onto one half. Add
 `'fold'` to `avoid` for small controls you want off the hinge.
@@ -244,7 +219,7 @@ The regions follow the system UI as it changes, and every automatic and manual c
 | Rotation, folding and unfolding, Split View, window resizing | Layout, safe-area and trait callbacks |
 | The camera area growing or shrinking (Dynamic Island with a Live Activity), the fold becoming active, the inner camera turning on | UIKit's reserved-region change tracking |
 | A UIKit bar growing, shrinking, moving, hiding or fading: vertical bar items added or removed, a large title collapsing, a tab bar hidden | Key-value observation of the bar, as soon as the change starts |
-| Bars appearing or disappearing with navigation or a tab switch | Re-scan when granular views mount, and a re-scan once a second while UIKit bars or a side column are present |
+| Bars appearing or disappearing with navigation or a tab switch | Re-scan when safe-area views mount, and a re-scan once a second while UIKit bars or a side column are present |
 | Anything that changed while the app was in the background | Re-scan when the scene becomes active |
 
 The once-a-second re-scan is one walk of the view hierarchy, batched by the system with other wake-ups. It doesn't run
@@ -307,10 +282,82 @@ return (
 `useVerticalBar()` returns the bar itself, for laying out items of your own: its `edge`, the `column`, where items
 start (`top`) and end (`bottom`), their horizontal center (`centerX`), and the bar items UIKit shows (`items`).
 
-### Modals and sheets
+### Sheets, modals and overlays: what covers a view
 
-Each provider measures in its own coordinate space. Put another `GranularSafeAreaProvider` inside every modal or sheet,
-as you would a `SafeAreaProvider`.
+A view only keeps clear of what can actually cover it:
+
+- **System UI** is drawn on top of everything: the status bar and the iPhone Duo's status cluster, cameras and the
+  Dynamic Island, the home indicator. Every view avoids it.
+- **App UI** (navigation and tab bars, the Duo's vertical bar items, the vertical bar back button, and your own
+  accessories) only covers what's drawn beneath it.
+
+A sheet or modal is drawn on top of the screen it came from, and so is a bottom sheet or overlay drawn in JavaScript at
+the root of the app. So content in a sheet ignores the tab bar and the accessories of the screen underneath, and still
+keeps clear of the home indicator:
+
+```
+Regular iPhone, a tab screen with a boarding pass button        The same with a sheet over it
+┌─────────────────────────┐                                     ┌─────────────────────────┐
+│ list ...                │                                     │ list ...                │
+│ last card               │ ← the list ends above all three     ├─────────────────────────┤
+│ [ boarding pass ]       │   (accessory)                       │ sheet                   │
+│ [ Trips  Probe  Me ]    │   (tab bar)                         │ [ Done ]                │ ← 34 pt: the home
+│          ───            │   (home indicator)                  │          ───            │   indicator only
+└─────────────────────────┘                                     └─────────────────────────┘
+```
+
+On the iPhone Duo, a sheet covers the vertical tab bar in the column, so content in it uses the full width. A
+full-screen modal reaches up to the status cluster, which is drawn on top of it, so it keeps clear of that.
+
+A view is also only seen inside its clipping ancestors (a sheet, a scroll view, `overflow: hidden`), and what can't reach
+that area can't cover it. A sheet that starts below the Duo's status cluster has nothing to avoid in the column, even
+avoiding whole bands, and a list only keeps clear of what's beside its own scroll view.
+
+None of this needs setting up: a sheet or modal needs no provider of its own. Native sheets and modals are measured
+where they come to rest while they're still sliding in, so their content is right before they're on screen.
+
+For a transparent overlay that should keep clear of the UI underneath anyway, such as a toast that sits above the tab
+bar rather than over it, set `underlying`.
+
+### Accessories
+
+`SafeAreaAccessory` marks your own UI floating over the content (a boarding pass button, a mini player, a tab bar you
+draw yourself) as something other views avoid. It's a `SafeAreaView`, so it keeps clear of the OS UI itself:
+
+```tsx
+import { SafeAreaAccessory } from 'react-native-granular-safe-areas';
+
+<SafeAreaAccessory granular edges={['left', 'right', 'bottom']} style={styles.boardingPass}>
+  <BoardingPassButton />
+</SafeAreaAccessory>
+```
+
+Content in the same screen moves clear of it; sheets and modals on top of it ignore it. It belongs to the screen edge
+it's closest to, so content beneath it moves away from that edge; set `edge` to choose another.
+
+### Insets for the content of a view
+
+`useSafeAreaViewInsets()` returns the insets of the nearest `SafeAreaView` around a component. Use it for content that
+applies insets itself, such as a list's content padding. With `mode="none"`, the view applies nothing and only measures:
+
+```tsx
+function Screen() {
+  return (
+    <SafeAreaView mode="none" edges={['bottom']} style={{ flex: 1 }}>
+      <List />
+    </SafeAreaView>
+  );
+}
+
+function List() {
+  const { bottom } = useSafeAreaViewInsets();
+  return <FlatList contentContainerStyle={{ paddingBottom: bottom }} … />;
+}
+```
+
+The view measures its own box, so the list ends above the tab bar and your accessories in a tab screen, and above the
+home indicator only in a sheet. It's zero outside a `SafeAreaView`, and inside one in `offset` mode, which moves as a
+whole.
 
 ## How it works
 
@@ -343,11 +390,22 @@ What the Duo simulator showed, and the library relies on:
 - **Bar items are centered on the camera** (x 418), not on the column (x 424), which is where the vertical bar back
   button goes too.
 
-The regions live in a small store outside React state. An automatic element measures itself with
-`getBoundingClientRect()` in a layout effect and computes how far each edge must move in to clear the regions it
-overlaps; a manual one computes the same thing from the placement you gave it. Both recompute when the store changes and
-re-render only if their own insets changed. On the New Architecture the first measurement happens before the first
-frame is painted, so nothing visibly jumps.
+The regions live in a small store outside React state, in two versions: broken down as far as the platform allows, and
+with every band whole. App UI regions name the view that draws them: UIKit bars get an id from the native side (which
+scans every presentation in the window), accessories and the vertical bar back button bring their own.
+
+A `SafeAreaView` gets the regions as props. Natively it finds the provider (the nearest one above it, or else the one
+covering its window, so sheets and modals need none), and when it's laid out it works out which app UI is drawn on top
+of it: where their branches of the view hierarchy meet, which comes later, or has the higher `zIndex`. It finds where
+it can be seen (its clipping ancestors), its position as laid out (React Native's views without the transforms React
+Native gives them, UIKit's containers where UIKit has them), and the scroll views around it, and works out how far each
+edge must move in to clear what covers it. It applies `offset` itself and reports the insets to JS for padding, margin
+and `none`. Before the first frame, JS measures it once with `getBoundingClientRect()`, from React Native's layout,
+telling accessories underneath from the order of the tree, and the native view starts from that.
+
+`useSafeAreaInsetsFor` computes the same thing from the placement you gave it, and re-renders only if its insets
+changed. On the web and on Android, `SafeAreaView` measures itself from JS the same way, when it mounts, when its layout
+changes and when the store changes.
 
 ## Debugging and previews
 
@@ -385,12 +443,16 @@ pnpm example ios     # Xcode 27.1 or newer; pick the iPhone Duo simulator in Dev
 ```
 
 The example has:
-- a trip screen modelled on a real app that broke on the Duo, using all three APIs and the vertical bar back button
+- a trip screen modelled on a real app that broke on the Duo: default rows, granular floating controls, dynamic badges,
+  a manual header and the vertical bar back button
 - a trip details screen with a floating back button over a hero picture, which becomes the Duo's back button
 - the same trip screen inside native tabs
 - edge markers, a marker every 40 pt down the right edge that shows which ones move as the system UI changes
+- moving elements: a default, a granular and a dynamic pill moved up and down the edge by a native-driver animation
 - native header items you can add and remove, to watch the vertical bar grow and shrink
-- a sheet, and the probe
+- a JS bottom sheet, a native form sheet and a full-screen modal, opened from the trip screen: the next flight bar is an
+  accessory, so the list ends above it, while each overlay's footer only keeps clear of the home indicator
+- the probe
 
 Switch between granular, regular-band and no avoidance to compare. In the browser, **Simulate a Live Activity** grows
 the camera area to show everything following it.

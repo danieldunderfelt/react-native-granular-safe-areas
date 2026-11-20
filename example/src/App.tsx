@@ -9,6 +9,7 @@ import {
 } from 'react-native-granular-safe-areas';
 import { DeviceFrame } from './DeviceFrame';
 import { linking, RootStack } from './navigation';
+import { JsSheetProvider } from './overlays';
 import {
   initialSettingsFromURL,
   SettingsProvider,
@@ -48,9 +49,11 @@ function Root() {
       mock={metrics}
       refine={avoidance === 'granular'}
     >
-      <NavigationContainer linking={linking}>
-        <RootStack />
-      </NavigationContainer>
+      <JsSheetProvider>
+        <NavigationContainer linking={linking}>
+          <RootStack />
+        </NavigationContainer>
+      </JsSheetProvider>
       {overlay ? <GranularSafeAreaDebugOverlay /> : null}
       <StatusBar style="auto" />
     </GranularSafeAreaProvider>

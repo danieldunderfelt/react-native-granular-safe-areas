@@ -192,6 +192,7 @@ the probe on the Duo simulator, and send back the JSON.
 | 2 iOS regions | Done, verified on the simulator: compiles cleanly with Xcode 27.2; the column splits into the status cluster and bar items in every pose, and stays whole elsewhere (checked on an iPhone 18 Pro simulator). |
 | 3 iOS system bars | Done, verified on the simulator: floating bar container items (back button, header items, tab bar platter), `UITabBarController`'s placeholder `UITabBar` ignored. Adding and removing header items is picked up within 0.4 s. |
 | 3b Duo back button | Done, verified on the simulator: `VerticalBarBackButton` / `useVerticalBarBackButton`, a native glass button (`GSABarButtonView`) at UIKit's back button slot, screen visibility from a native anchor (`GSAAnchorView`). Stacks, tabs, unfolding and the outer display in landscape (bar on the left) all checked. |
+| 3c Dynamic elements | Done, verified on the simulator: `<GranularSafeAreaView dynamic>` (`GSADynamicView`) follows scrolling in the same frame and layout changes after each mounting transaction; `offset` natively, `padding` through JS. Also fixed: `scrollable` content measured while scrolled out of view got no insets. |
 | 4 Android | Not started; Android gets regular bands from safe-area-context. |
 | 5 Hardening | Not started. |
 
@@ -213,13 +214,126 @@ the probe on the Duo simulator, and send back the JSON.
 5. If something is off, open **Probe**, tap **Collect diagnostics**, and send the JSON (logged to Metro with the prefix
    `[granular-safe-areas probe]`, or shared from the button).
 
+## Next: a generic, zero-config API (agreed 2026-11-20)
+
+The target API is in [docs/api.md](docs/api.md); it becomes the README once it's built. Nothing is published, so
+nothing old is kept around. In short:
+
+- **Nothing to set up.** No providers at the root or in modals; `GranularSafeAreaProvider` becomes optional (mocks,
+  `debug`, `granular={false}`, scoping a custom overlay).
+- **One component.** A drop-in `SafeAreaView`, prop-compatible with safe-area-context's, plus `offset` and `none`
+  modes. The props-spreading hook goes; the manual hook stays as `useSafeAreaInsetsFor`.
+- **Bands by default, granular and moving on request.** Every view measures itself and works out the inset it needs,
+  when it's laid out. By default it avoids the whole band on each edge it overlaps, so it stays clear of the OS UI
+  wherever it scrolls along that edge. `granular` avoids only the regions it overlaps where it's laid out (fixed UI).
+  `dynamic` follows the view as it moves and avoids only what it overlaps right now; movement is a design decision, so
+  it's opt-in. Scroll views are detected: their scrolling-edge bands are left to the content inset, and `granular`
+  acts like the default there.
+- **Reanimated, optionally.** A `/reanimated` entry with `AnimatedSafeAreaView`: `transition` animates inset changes
+  with any Reanimated animation, `insets` exposes them as a shared value for animations of your own.
+- **Generic concepts.** Region kinds `status`, `cutout`, `controls`, `fold`, `inset`; `useSystemControls` instead of
+  the vertical bar; `SystemBackButton` instead of `VerticalBarBackButton`. Platform-specific facts go into per-platform
+  builders on a shared core.
+- **More platforms on the same model.** Android natively (cutouts, caption bars in desktop windowing, folds), iPad
+  window controls, and possibly the title-bar area of desktop PWAs.
+
+### Architecture
+
+- **Every `SafeAreaView` is a native view** on iOS and Android (JS-measured on the web). It measures its layout box,
+  without its own transform, in its context, and applies `offset` itself. Default and `granular` views measure only
+  when laid out (mount, their own layout, mounting transactions that move them, OS UI changes); a default view's
+  result changes only when the bands do, so a bar appearing in the column re-renders nothing. `padding` and `margin` are reported to JS,
+  the only one that can change layout; on mount JS measures once so the first frame is already right.
+- **Contexts instead of providers.** A native observer per window does what `GSAProviderView` does now. Each view
+  belongs to its presentation (the root, or a presented sheet or modal), found by walking up natively, or to the
+  nearest optional provider. Native sends each context's metrics to JS through TurboModule events; JS builds the
+  regions (the tested TypeScript core stays the one source of the geometry) and hands them back to a native registry
+  that views read. Region changes re-render nothing.
+- **Dynamic tracking without polling.** A dynamic view observes the geometry (`position`, `bounds`, `transform`) of
+  every layer between it and its context with KVO, and recomputes once per frame in a run-loop observer that runs just
+  before Core Animation commits. That covers scrolling, layout, gestures, UIKit transitions, and Reanimated and
+  Animated native-driver animations, in the same frame. To verify first: that all of those go through the layer's
+  setters, and the cost with many views. Fallback: today's scroll KVO and mounting-transaction updates, plus an opt-in
+  per-frame check for animated containers. Android: `ViewTreeObserver` pre-draw and scroll listeners.
+- **Reanimated through events.** The native view emits an event when its insets change. Reanimated runs worklet
+  handlers for native events on the UI thread as they're dispatched (as for `useAnimatedScrollHandler`), so the
+  `/reanimated` entry writes them into a shared value and drives `transition` with no trip through JS. In that mode
+  the view measures without its own transform, so an animation can't feed back into the insets.
+- **The system back button lives in the screen.** `SystemBackButton` renders a native host that draws the glass
+  button at the system's slot, so it moves with screen transitions and disappears with its screen. No registry or
+  anchor.
+
+### Phases
+
+| # | Deliverable | Verified on |
+| --- | --- | --- |
+| 1 | **API spec**: [docs/api.md](docs/api.md), for approval before any code. **Approved.** | Review |
+| 2 | **iOS, one native view**: every `SafeAreaView` native; layout-box measurement; bands by default, `granular` opt-in, scroll views detected (scrolling-edge bands dropped, out-of-sight content measured where it will be); opt-in `dynamic` with the event-driven tracking above; modes `padding`, `margin`, `offset`, `none`; `onInsetsChange`; `edges` object form. Remove the props hook. | Duo simulator, plus a list with many views for cost |
+| 2b | **What covers a view**: a view avoids system UI, and app UI only where it's drawn on top of it (sheets and modals, native or JS, ignore the tab bar and accessories beneath them); only where it can be seen counts. `SafeAreaAccessory`, `useSafeAreaViewInsets`, `underlying`. One provider covers its whole window. | iPhone 18 Pro and Duo simulators |
+| 3 | **Reanimated entry**: `/reanimated`, optional peer dependencies, `AnimatedSafeAreaView` with `transition` and `insets`; the badge in the example springs in. | Duo simulator |
+| 4 | **iOS, zero-config**: no root provider either (a window observer, TurboModule events, a native region registry), optional provider (`mock`, `debug`, `granular`, scope), `SystemBackButton` hosted in the screen. Sheets and modals already need no provider since 2b. Riskiest phase: it adds a hidden view to each window, and a sheet's first frame may take one JS round trip. | Stacks, tabs and a sheet with no provider, on the Duo simulator |
+| 5 | **Generic model**: platform-tagged metrics with per-platform builders on a shared core; the new region kinds; `useSystemControls`. Probe an iPad simulator in windowed mode, then support its window controls. | Unit tests, iPad simulator |
+| 6 | **Android, native**: metrics (cutout bounding rects, caption-bar bounding rects on API 35+, folds through Jetpack WindowManager), the native view and its tracking, events for Reanimated. Fixtures recorded on the Pixel_10 emulator (punch-hole) and a tablet emulator in desktop windowing (caption bar). | Emulators |
+| 7 | **Polish**: `/jest` mock, `/testing` exports, web scroll-view detection (and maybe the PWA title-bar area), README from the spec, an example gallery with the Duo first. Then publish. | Both |
+
+Each phase leaves the library working, with the tests and the Duo simulator run at every step.
+
+**Phase 2 status (2026-11-20): done, verified on the Duo simulator.** `SafeAreaView` (bands by default, `granular`,
+`dynamic`, modes `padding`/`margin`/`offset`/`none`, `edges` object form, `onInsetsChange`) on one native view,
+`GSASafeAreaView`; `useSafeAreaInsetsFor` replaces the manual hook; the props hook and `scrollable` prop are gone. Found
+on the way:
+
+- **Tracking by observation works beyond scrolling.** A dynamic view follows a container moved by Animated's native
+  driver, in the same frame, with nothing in JS (example: **Moving elements**).
+- **Navigation transitions need care.** While a screen transitions (iOS 27 zooms it from the tapped card), the views
+  around it are mid-animation and React Native is still laying it out, so static views read wrong positions there. They
+  now keep what they have during a view controller transition and measure once it completes, and they start from what
+  JS measured from React Native's layout before the first frame, in every mode. Result: no report and no jump on push
+  or pop.
+- **Pagers** (`pagingEnabled`) are measured where their pages come to rest, not as scrolling content; otherwise every
+  page of a tab view would ignore the side column.
+- **Cost:** about 1.3 µs per measurement. 300 granular views (150 dynamic) in a fast-scrolled `FlatList` take 1 to 4%
+  of the main thread; most of it is static views measuring after each mounting transaction. A shared observer per
+  layer and skipping transactions that don't touch a view's ancestors would cut it further if it ever matters.
+- Web: the example bundles; not run in a browser this time.
+
+**Phase 2b status (2026-11-20): done, verified on the iPhone 18 Pro and Duo simulators.** Asked for because on regular
+iPhones a sheet's bottom inset included the tab bar and the app's floating accessories it covers.
+
+- **Draw order decides.** Every app UI region names the view that draws it (UIKit bars get ids from a window-wide scan;
+  accessories and the back button bring their own); each view works out, when it's laid out, which of them are drawn
+  on top of it: where their branches meet, which comes later or has the higher `zPosition`. Verified: tab screen content
+  under the tab bar, a JS overlay at the root over it, a native sheet over it, each the right way round.
+- **Where a view can be seen** (its clipping ancestors) bounds it, and decides whether a whole band counts: one only
+  does when something in it that covers the view reaches that area. A Duo sheet below the status cluster gets nothing
+  from the column; a full-screen modal does.
+- **Results** (bottom inset of an overlay footer over the tab screen with the boarding pass accessory): JS sheet 34,
+  form sheet 26 (iOS 27's form sheet floats 8 pt up, so it only overlaps the home indicator by 26), full-screen modal
+  34, on both devices; the tab screen's list ends above the accessory, the tab bar and the home indicator.
+- **No nested providers.** A view outside any provider measures in the one covering its window. A full-screen modal
+  takes the presenting screens out of the window, root provider and all; the view then measures in window coordinates,
+  which the root provider shares.
+- **Measured as laid out, refined.** Static views leave out the transforms React Native sets (animations) but keep
+  UIKit's positioning (sheets float, containers move). Leaving out UIKit's too broke sheets; including React Native's
+  made static views follow animations.
+- **Transitions.** Measuring from layout during a push still gave transient positions (UIKit moves the screens' own
+  frames), so static views keep waiting for pushes to finish. A sheet or modal being presented, though, has its views
+  where they'll rest from the start, so they measure straight away and are right before they slide into view. JS's
+  first estimate tells accessories underneath from the order of the tree (`compareDocumentPosition`, which React
+  Native's elements have); UIKit bars are assumed to cover until the native side knows.
+- **Accessories keep their region out of the window** (another tab, under a full-screen modal): they cover nothing
+  then anyway, and removing them made the screen's own content flicker on its way back.
+
 ## Decisions (defaults chosen, change any)
 
 1. Build on react-native-safe-area-context and re-export it, rather than writing a standalone replacement. This keeps
    React Navigation and Expo Router headers consistent, and reuses years of fixes on Android, web and modals.
 2. New Architecture only, RN ≥ 0.82. This gives synchronous `getBoundingClientRect` and no flash on the first frame.
-3. Fixed UI is granular; scrolling content keeps the band. This follows Apple's guidance.
-4. v1 covers iOS, plus mocks and web. Android comes after.
+3. Views avoid whole bands by default, which keeps scrolling content clear of the OS UI without moving, as Apple
+   recommends. Granular avoidance is opt-in per view (`granular` for fixed UI), and following movement is opt-in
+   (`dynamic`), because movement is a design decision.
+4. v1 covers iOS and Android natively, plus mocks and web.
+5. Zero-config, with a drop-in `SafeAreaView`. Reanimated is optional, through its own entry point.
 
 ## Sources
 

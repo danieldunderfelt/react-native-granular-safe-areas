@@ -89,7 +89,8 @@ export function GranularSafeAreaProvider({
     () =>
       new GranularSafeAreaStore(
         () => measureRect(providerRef.current),
-        () => refreshNativeProvider(providerRef.current)
+        () => refreshNativeProvider(providerRef.current),
+        () => providerRef.current
       )
   );
   const [nativeMetrics, setNativeMetrics] =
@@ -155,12 +156,16 @@ export function GranularSafeAreaProvider({
     () => (metrics ? buildRegions(metrics, { refine }) : []),
     [metrics, refine]
   );
+  const bands = useMemo(
+    () => (metrics ? buildRegions(metrics, { refine: false }) : []),
+    [metrics]
+  );
 
   // Children's layout effects run before this one, so on mount they measure, then measure again here. Both happen
   // before the first frame is painted.
   useLayoutEffect(() => {
-    store.publish(regions, metrics);
-  }, [store, regions, metrics]);
+    store.publish(regions, metrics, bands);
+  }, [store, regions, metrics, bands]);
 
   return (
     <GranularSafeAreaContext.Provider value={store}>
@@ -193,6 +198,7 @@ function VerticalBarBackButtonHost({
     <BarButtonView
       systemImage={button.icon === 'close' ? 'xmark' : 'chevron.backward'}
       label={button.accessibilityLabel}
+      ownerId={store.backButtonOwnerId}
       onBarButtonPress={store.pressBackButton}
       style={[
         styles.barButton,

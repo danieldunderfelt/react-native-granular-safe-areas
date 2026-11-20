@@ -7,6 +7,7 @@ const COLORS: Record<SafeAreaRegionKind, string> = {
   status: 'rgba(255, 45, 85, 0.4)',
   camera: 'rgba(175, 82, 222, 0.45)',
   systemBar: 'rgba(0, 122, 255, 0.4)',
+  accessory: 'rgba(90, 200, 250, 0.4)',
   fold: 'rgba(52, 199, 89, 0.4)',
 };
 

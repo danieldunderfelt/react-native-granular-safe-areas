@@ -10,6 +10,8 @@ export interface NativeProps extends ViewProps {
   systemImage: string;
   /** Read by VoiceOver. */
   label?: string;
+  /** The id its region in the vertical bar names it by, so views can tell whether it's drawn on top of them. */
+  ownerId?: CodegenTypes.Int32;
   // Not `onPress`: `topPress` is already registered as a bubbling event, and an event can't be both.
   onBarButtonPress?: CodegenTypes.DirectEventHandler<Readonly<{}>>;
 }

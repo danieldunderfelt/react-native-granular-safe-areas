@@ -5,7 +5,7 @@ import {
 } from '@react-navigation/native';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import {
-  GranularSafeAreaView,
+  SafeAreaView,
   useSafeAreaInsets,
   VerticalBarBackButton,
 } from 'react-native-granular-safe-areas';
@@ -33,9 +33,8 @@ export function TripDetailsScreen() {
         <View style={[styles.hero, { backgroundColor: trip.color }]}>
           <Text style={styles.heroCode}>{trip.code}</Text>
         </View>
-        {/* Scrolling content: kept clear of the whole column. */}
-        <GranularSafeAreaView
-          scrollable="vertical"
+        {/* Scrolling content: kept clear of the whole column, wherever it scrolls. */}
+        <SafeAreaView
           edges={['left', 'right']}
           avoid={avoid}
           style={styles.body}
@@ -54,7 +53,7 @@ export function TripDetailsScreen() {
             device closed, or open in landscape. Open it in portrait, where
             there is no vertical bar, and the button comes back.
           </Text>
-        </GranularSafeAreaView>
+        </SafeAreaView>
       </ScrollView>
 
       <VerticalBarBackButton onPress={() => navigation.goBack()}>
@@ -68,7 +67,8 @@ export function TripDetailsScreen() {
       </VerticalBarBackButton>
 
       {/* Moved in next to the status cluster on the Duo; stays in the corner elsewhere. */}
-      <GranularSafeAreaView
+      <SafeAreaView
+        granular
         mode="offset"
         edges={['right']}
         spacing={8}
@@ -76,9 +76,10 @@ export function TripDetailsScreen() {
         style={[styles.floating, styles.share, { top: buttonTop }]}
       >
         <Text style={styles.floatingText}>⇪</Text>
-      </GranularSafeAreaView>
+      </SafeAreaView>
 
-      <GranularSafeAreaView
+      <SafeAreaView
+        granular
         edges={['left', 'right', 'bottom']}
         avoid={avoid}
         style={styles.dock}
@@ -86,7 +87,7 @@ export function TripDetailsScreen() {
         <Pressable style={styles.checkIn}>
           <Text style={styles.checkInText}>Check in</Text>
         </Pressable>
-      </GranularSafeAreaView>
+      </SafeAreaView>
     </View>
   );
 }

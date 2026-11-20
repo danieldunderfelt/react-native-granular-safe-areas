@@ -11,8 +11,8 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, readonly) NSArray<UIView *> *barViews;
 @property (nonatomic, readonly) BOOL containersVisible;
 @property (nonatomic, readonly) BOOL barItemsKnown;
-/// Scans the view controller hierarchy `view` is presented in: the root view controller for the main app, or the
-/// presented view controller for a sheet or modal. Other presentations' bars don't cover `view`'s content.
+/// Scans the window `view` is in, every presentation: the main app and any sheets or modals on top of it. Which of
+/// them cover a given view is up to that view, from the order they're drawn in.
 + (instancetype)scanForView:(UIView *)view;
 @end
 

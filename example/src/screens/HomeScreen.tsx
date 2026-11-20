@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import {
   fixtures,
-  GranularSafeAreaView,
+  SafeAreaView,
   type FixtureName,
 } from 'react-native-granular-safe-areas';
 import type { RootStackParamList } from '../navigation';
@@ -34,6 +34,11 @@ const DEMOS: {
     detail: 'A marker every 40 pt: watch them follow the system UI',
   },
   {
+    route: 'Moving',
+    title: 'Moving elements',
+    detail: 'Default, granular and dynamic on an animated container',
+  },
+  {
     route: 'Tabs',
     title: 'Trip screen in native tabs',
     detail: 'UITabBarController: a vertical tab bar on the Duo',
@@ -52,8 +57,13 @@ const DEMOS: {
   },
   {
     route: 'Sheet',
-    title: 'Probe in a sheet',
-    detail: 'Form sheet presentation',
+    title: 'Form sheet',
+    detail: 'A native sheet, with no provider of its own',
+  },
+  {
+    route: 'Modal',
+    title: 'Full-screen modal',
+    detail: 'Reaches the status cluster on the Duo',
   },
 ];
 
@@ -79,8 +89,7 @@ export function HomeScreen() {
       style={styles.screen}
       contentInsetAdjustmentBehavior="automatic"
     >
-      <GranularSafeAreaView
-        scrollable="vertical"
+      <SafeAreaView
         edges={['left', 'right']}
         avoid={avoid}
         style={styles.content}
@@ -126,7 +135,7 @@ export function HomeScreen() {
             </View>
           </>
         ) : null}
-      </GranularSafeAreaView>
+      </SafeAreaView>
     </ScrollView>
   );
 }

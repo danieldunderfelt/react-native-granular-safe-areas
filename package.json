@@ -115,8 +115,8 @@
         "GranularSafeAreaAnchor": {
           "className": "GSAAnchorView"
         },
-        "GranularSafeAreaDynamicView": {
-          "className": "GSADynamicView"
+        "GranularSafeAreaView": {
+          "className": "GSASafeAreaView"
         }
       },
       "modulesProvider": {

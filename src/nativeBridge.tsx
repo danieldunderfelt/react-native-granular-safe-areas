@@ -8,7 +8,8 @@ import {
 } from 'react-native';
 import type { NativeProps as AnchorProps } from './specs/GranularSafeAreaAnchorNativeComponent';
 import type { NativeProps as BarButtonProps } from './specs/GranularSafeAreaBarButtonNativeComponent';
-import type NativeDynamicView from './specs/GranularSafeAreaDynamicViewNativeComponent';
+import type NativeView from './specs/GranularSafeAreaViewNativeComponent';
+import type { ScrollAxes } from './types';
 import type { NativeProps } from './specs/GranularSafeAreaProviderViewNativeComponent';
 
 // Platforms without native granular metrics yet (web, Android). The provider falls back to the regular insets from
@@ -90,8 +91,8 @@ const styles = StyleSheet.create({
   lineB: { transform: [{ rotate: '-45deg' }] },
 });
 
-/** No native tracking: `dynamic` views measure themselves from JS instead, where JS can see scrolling. */
-export const DynamicView: typeof NativeDynamicView | null = null;
+/** No native view yet: `SafeAreaView` measures itself from JS. */
+export const NativeSafeAreaView: typeof NativeView | null = null;
 
 /** Whether {@link subscribeToScroll} reports anything: on the web, not on Android. */
 export const canTrackScrollFromJS = Platform.OS === 'web';
@@ -140,6 +141,47 @@ export function subscribeToScroll(listener: () => unknown): () => void {
       target.removeEventListener('scroll', handleScroll, { capture: true });
     }
   };
+}
+
+type DomElement = {
+  parentElement: DomElement | null;
+  scrollHeight: number;
+  clientHeight: number;
+  scrollWidth: number;
+  clientWidth: number;
+};
+type DomWindow = {
+  getComputedStyle(element: DomElement): {
+    overflowX: string;
+    overflowY: string;
+  };
+};
+
+const SCROLLING = new Set(['auto', 'scroll']);
+
+/**
+ * Web: which way the elements between `node` and the provider scroll, read from the DOM (React Native Web's `ScrollView` doesn't
+ * provide `ScrollView.Context`). `null` elsewhere.
+ */
+export function scrollAxesOf(
+  node: HostInstance | null,
+  provider: HostInstance | null
+): ScrollAxes | null {
+  const view = (globalThis as { window?: DomWindow }).window;
+  if (Platform.OS !== 'web' || !view || !node) return null;
+  const axes = { vertical: false, horizontal: false };
+  // Scrolling above the provider moves it along with the element, so it changes nothing.
+  const stop = provider as unknown as DomElement | null;
+  let element = (node as unknown as DomElement).parentElement;
+  while (element && element !== stop) {
+    const { overflowX, overflowY } = view.getComputedStyle(element);
+    if (SCROLLING.has(overflowY) && element.scrollHeight > element.clientHeight)
+      axes.vertical = true;
+    if (SCROLLING.has(overflowX) && element.scrollWidth > element.clientWidth)
+      axes.horizontal = true;
+    element = element.parentElement;
+  }
+  return axes;
 }
 
 export function refreshNativeProvider(_view: HostInstance | null) {}
