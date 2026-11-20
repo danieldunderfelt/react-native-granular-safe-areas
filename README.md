@@ -34,8 +34,9 @@ It does more than the Duo needs, on every iPhone:
 It builds on [react-native-safe-area-context](https://github.com/appandflow/react-native-safe-area-context) and
 re-exports all of it, so one import covers every safe-area need. Its `SafeAreaView` is a drop-in for that library's.
 
-> **Status: early.** Built and tested on the iPhone Duo simulator (Xcode 27.2, iOS 27.2) in every pose, and on the
-> iPhone 18 Pro simulator. It has not run on a physical Duo yet.
+> **Status: early.** Built and tested on the iPhone Duo simulator (Xcode 27.2, iOS 27.2) in every pose, on the
+> iPhone 18 Pro and iPad Pro simulators, and on the Pixel 10 emulator (Android 17). It has not run on a physical Duo
+> yet.
 
 ## Requirements
 
@@ -43,6 +44,7 @@ re-exports all of it, so one import covers every safe-area need. Its `SafeAreaVi
 - `react-native-safe-area-context` 5.11 or newer
 - iOS: build with Xcode 27.1 (iOS 27.1 SDK) for the iPhone Duo APIs. Older Xcode builds work, but behave like a regular
   safe area.
+- Android: `minSdkVersion` 24 or newer
 - Optional: `react-native-reanimated` 4 and `react-native-worklets`, for `AnimatedSafeAreaView`
 
 ## Installation
@@ -52,8 +54,8 @@ pnpm add react-native-granular-safe-areas react-native-safe-area-context
 cd ios && pod install
 ```
 
-There's nothing to set up: no provider to mount, in the app or in its modals. Expo: use a development build
-(`npx expo run:ios`); there's no config plugin to add.
+There's nothing to set up: no provider to mount, in the app or in its modals, and nothing to add to Gradle. Expo: use
+a development build (`npx expo run:ios`, `npx expo run:android`); there's no config plugin to add.
 
 ## Usage
 
@@ -123,7 +125,8 @@ regular safe area.
 `edges` works as in react-native-safe-area-context: a list of edges, or an object with `'additive'` (add the inset to
 the view's own padding or margin), `'maximum'` (use whichever is larger) or `'off'` per edge.
 
-On iOS every `SafeAreaView` is a native view that measures itself, and applies `offset` itself, in the same frame.
+On iOS and Android every `SafeAreaView` is a native view that measures itself, and applies `offset` itself, in the
+same frame.
 Padding and margin change layout, which only React Native can do, so when they change, JS applies them a frame or two
 later. A view is measured as laid out, without its own `transform`, so animating it never feeds back into its insets.
 
@@ -131,8 +134,8 @@ later. A view is measured as laid out, without its own `transform`, so animating
 
 `dynamic` makes a view follow its position as it moves, whatever moves it: scrolling, layout changes, gestures, screen
 transitions, and animations from Reanimated or Animated's native driver. On iOS it observes the geometry of every view
-between itself and the window, and measures itself again in the same frame as one of them moves. Nothing polls, and
-nothing runs in JavaScript while it moves. In a scroll view it ignores the regions on the scrolling edges, so it
+between itself and the window, and measures itself again in the same frame as one of them moves. On Android it checks
+where it is before each frame is drawn. Nothing runs in JavaScript while it moves. In a scroll view it ignores the regions on the scrolling edges, so it
 doesn't stick under the home indicator as it scrolls past.
 
 Use `offset` for moving content: it's applied natively, in the same frame. `padding` and `margin` change layout a frame
@@ -175,7 +178,7 @@ dynamic, scrolled as fast as it goes, spends 1 to 4% of the main thread on them 
   <AnimatedSafeAreaView dynamic mode="none" insets={insets} style={[styles.badge, style]} />
   ```
 
-On iOS the native view reports new insets as an event that Reanimated handles on the UI thread as it's dispatched, the
+The native view reports new insets as an event that Reanimated handles on the UI thread as it's dispatched, the
 same way `useAnimatedScrollHandler` handles scrolling, so the animation starts on the next frame without a trip through
 JavaScript. `margin` changes the layout around the view, so it changes without animating.
 
@@ -289,6 +292,7 @@ edges, so `{ top: 0, height: 56 }` is a full-width strip, and with no placement 
 type SafeAreaRegion = {
   kind: 'status' | 'cutout' | 'controls' | 'accessory' | 'fold' | 'inset';
   edge: 'top' | 'right' | 'bottom' | 'left' | null; // the edge it hugs; null for a floating one (a fold)
+  side?: 'top' | 'right' | 'bottom' | 'left'; // for a corner region, the other edge it hugs
   frame: { x: number; y: number; width: number; height: number };
   owner?: number; // the view drawing app UI; absent for system UI, which covers everything
 };
@@ -298,15 +302,37 @@ type SafeAreaRegion = {
 | --- | --- |
 | `status` | The status bar and what's in it: time, signal, battery. On the iPhone Duo, the whole status cluster |
 | `cutout` | A camera or sensor housing outside the bands: a punch-hole, the Dynamic Island, the iPhone Duo's camera |
-| `controls` | Controls drawn over the app: UIKit's navigation, tab and tool bars, the Duo's vertical bar items, the system back button |
+| `controls` | Controls drawn over the app: UIKit's navigation, tab and tool bars, the Duo's vertical bar items, an iPad window's controls, the system back button |
 | `accessory` | Your own UI floating over the content, marked with `SafeAreaAccessory` |
 | `fold` | A fold or hinge |
 | `inset` | A safe-area inset band the platform didn't break down further, avoided as a whole |
 
 `useSystemControls()` describes the strip along one edge where the system puts its controls and yours may join (the
-iPhone Duo's vertical bar), or returns `null`: its `edge`, the `strip`, the `occupied` stretches (the status cluster,
-the bar items, the system back button), the `free` ones, the system's `itemSize`, and the `center` line its items are
+iPhone Duo's vertical bar, or the caption bar of an Android window in desktop windowing that the app draws under), or
+returns `null`: its `edge`, the `strip`, the `occupied` stretches (the status cluster, the bar items, the window
+buttons, the system back button), the `free` ones, the system's `itemSize`, and the `center` line its items are
 centered on. Most apps never need it.
+
+### iPad windows
+
+An iPad window that doesn't fill the screen has its controls (close, minimize, arrange) in its top-left corner, over
+the app. UIKit's safe area leaves them out, and a navigation bar moves its items past them, but a header drawn in
+JavaScript slides under them. Here they're a `controls` region in the corner, and a view gets out of their way the way
+UIKit's own bars do:
+
+- **Level with them**, like a header or a button in it: the view moves sideways, past the controls, and keeps its
+  height. Moving down would take more than half of it.
+- **Taller than that**, like a whole screen or a sidebar: the view starts below them.
+
+```
+iPad, a window smaller than the screen
+┌─(●●●)─[‹ Trip]──[Sign in]─┐  a header: its content moves past the controls
+│                           │
+│ ┌───────────────────────┐ │  a screen below the header: nothing to avoid
+```
+
+Edges you leave out decide it too: a header without `'left'` in its `edges` moves down instead. When the window fills
+the screen, the controls are in the status bar and there's nothing to avoid.
 
 ### System back button
 
@@ -398,7 +424,8 @@ header (custom `headerRight` content): they overlap the bar on purpose.
 
 - **simulate a device**: `mock={fixtures.iPhoneDuoOuterPortrait}` lays out for the Duo on any device or in a browser.
   `fixtures` has the Duo closed in portrait (plain, with native tabs, with a native header) and landscape, open in
-  landscape and portrait, folded like a book, and a regular iPhone, recorded on the simulator.
+  landscape and portrait, folded like a book, a regular iPhone, an iPad full screen and in a smaller window, and a
+  Pixel 10 in portrait and landscape, recorded on the simulators and the emulator.
 - **debug**: `debug` draws the regions over the app, labelled with their kinds.
 - **compare**: `granular={false}` makes every view inside behave like a regular safe area.
 - **scope a custom overlay**: views and `useSafeAreaInsetsFor` inside measure relative to it. Native modals and sheets
@@ -435,15 +462,17 @@ share it.
 | Platform | What it knows | Views |
 | --- | --- | --- |
 | iOS 27.1+ | The status cluster, cameras, the iPhone Duo's vertical bar and its items, UIKit bars anywhere, folds | Native |
+| iPadOS 26+ | Regular bands, UIKit bars, and the window controls of a window smaller than the screen | Native |
 | Older iOS | Regular bands, plus UIKit bars | Native |
-| Android | Regular bands | Measured from JS |
+| Android | The camera and the rounded corners of a band made only of the display cutout (a phone in landscape), the window buttons of a caption bar the app draws under (desktop windowing, Android 15+), folds. Bands with the status or navigation bar in them stay whole | Native |
 | Web | Regular bands from `env(safe-area-inset-*)`, and recorded devices through `mock` | Measured from JS |
 
 ## How it works
 
 The native side reports raw facts about the app's window: the safe-area insets, the `verticalBarEdge` trait, the status
 bar frame, UIKit's reserved regions (`UIView.reservedRegions(kind:options:)`), the layout region for a bar on the
-vertical bar edge, and the frames of every UIKit bar in the window, each with the view that draws it. An empty view
+vertical bar edge, an iPad window's controls (from the corner-adapted safe area), and the frames of every UIKit bar in
+the window, each with the view that draws it. An empty view
 behind everything in the window follows them; a `GranularSafeAreaProvider` does the same for itself. The JavaScript
 side turns those facts into regions:
 
@@ -471,6 +500,14 @@ What the Duo simulator showed, and the library relies on:
 - **Bar items are centered on the camera** (x 418), not on the column (x 424), which is where the system back button
   goes too.
 
+On Android, the native side reports the window's insets broken down by what's in them (the status and navigation
+bars, a caption bar, the display cutout), the cutout's camera housings, the window buttons of a caption bar (Android
+15+), folds (Jetpack WindowManager) and the display's rounded corners. Bands with the status or navigation bar in them
+stay whole: those bars span the edge. A band made only of the display cutout, such as the camera side of a phone in
+landscape, becomes the camera housing and the rounded corners at its ends. A top band made only of a caption bar the
+app draws under becomes its window buttons. What the Pixel 10 emulator showed: in landscape with the camera on the
+left, the left band is 54 pt of cutout, with the camera at y 185–227 and 50 pt corners at both ends.
+
 Each `SafeAreaView` is a native view that gets the regions as props. When it's laid out, it works out which app UI is
 drawn on top of it (where their branches of the view hierarchy meet, which comes later, or has the higher `zIndex`),
 where it can be seen (its clipping ancestors), its position as laid out (React Native's views without the transforms
@@ -489,6 +526,7 @@ layout changes and when the regions change.
 pnpm install
 pnpm example web     # iPhone Duo simulation in the browser
 pnpm example ios     # Xcode 27.1 or newer; pick the iPhone Duo simulator in Device Hub
+pnpm example android # an emulator with a punch-hole camera, such as a Pixel
 ```
 
 The example has:

@@ -353,10 +353,36 @@ coordinates. `refreshSafeAreas()` re-reads right away. Different from the archit
 - **One window.** The observer follows the key window when it starts; a second window (an iPad scene, CarPlay) needs a
   provider for now.
 
-**Phase 5 status (2026-11-20): done except the iPad probe.** Region kinds `status`, `cutout`, `controls`, `accessory`,
-`fold`, `inset`; metrics carry `platform`; `useSystemControls` replaces the vertical bar hook and `SystemBackButton` the
-vertical bar back button; nothing Duo-specific is left in the public API. **Blocked:** the device tools here don't list
-iPad simulators, so iPad window controls aren't probed or supported yet; an iPad gets regular bands plus UIKit bars.
+**Phase 5 status (2026-11-20): done, verified on the iPad Pro 11-inch, iPhone 18 Pro and Duo simulators.** Region
+kinds `status`, `cutout`, `controls`, `accessory`, `fold`, `inset`; metrics carry `platform`; `useSystemControls`
+replaces the vertical bar hook and `SystemBackButton` the vertical bar back button; nothing Duo-specific is left in the
+public API. iPad, probed in windowed mode (iOS 27.0):
+
+- **The window controls** of a window smaller than the screen sit in its top-left corner, over the app. UIKit's safe
+  area leaves them out (top 10 in a 375 × 617 window); only the corner-adapted safe area knows them: horizontal
+  adaptation left 66, vertical top 53. A navigation bar moves its items past them; a JS header slid under them.
+- **Rounded corners adapt the same insets**, evenly on both sides (iPad 9.5, iPhone 18 Pro 18), and on the Duo even
+  the vertical top (17.3 with a top inset of 0). So a corner holds controls only on an iPad, where its horizontal inset
+  sticks out further than the other side's while the vertical top exceeds the safe area. Full-screen windows have
+  none: the controls are in the status bar then.
+- **A corner region**: `controls` with `edge: 'top'` and `side: 'left'`. An element moves below it, unless that takes
+  more than half of its height (a header, a button in it); then it moves past it, as UIKit's bars do. A whole screen
+  or a sidebar starts below the controls. Verified: the trip screen's JS header moves its back button and title past
+  the controls and keeps its height.
+- **The status bar frame** in such a window is reported at the window's top as if it were the screen; it's now
+  clipped to where the window is, so it's `null` there.
+- Fixtures `iPadProFullScreen` and `iPadProWindow`, recorded.
+
+**Phase 6 status (2026-11-20): done, verified on the Pixel 10 emulator (Android 17, API 37, 3-button navigation).**
+Native module, provider, anchor and `SafeAreaView` in Kotlin, the same spec as iOS. Metrics: insets by source (bars,
+caption bar, cutout), the cutout's camera rects, caption-bar window buttons (API 35+), folds (Jetpack WindowManager),
+rounded corners. Bands with the status or navigation bar in them stay whole; a band made only of the cutout becomes
+the camera and the corners at its ends; a top band made only of a transparent caption bar becomes its buttons.
+Verified in portrait and both landscapes: edge markers move only beside the camera and corners, dynamic and springy
+pills follow it (so Reanimated's UI-thread events work on Android), the trip screen's badge, accessory and list, and
+the overlays ignoring the accessory. Not exercised on a device: folds, desktop caption bars, React Native's `Modal`
+(its own window), `underlying`. No system back button slot on Android. Static views measure before every frame there
+(cheap) rather than after each mounting transaction. Fixtures `pixel10Portrait` and `pixel10Landscape`, recorded.
 
 **Phase 7 status (2026-11-20): done, except publishing.** `/jest` (a mock with the main entry's every export, checked
 by the type checker), `/testing` (geometry, metrics, store), README rewritten around the API as built,

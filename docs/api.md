@@ -34,7 +34,7 @@ A drop-in for react-native-safe-area-context's `SafeAreaView`. Takes `ViewProps`
 | --- | --- | --- |
 | `padding` | The children move in; the view's box and background stay | React Native layout |
 | `margin` | The view's box moves in, and so does what's laid out next to it | React Native layout |
-| `offset` | The whole view moves, with a transform on top of its own | Natively, in the same frame (iOS) |
+| `offset` | The whole view moves, with a transform on top of its own | Natively, in the same frame (iOS, Android) |
 | `none` | Nothing; read the insets with `onInsetsChange` or `useSafeAreaViewInsets` | |
 
 ### `SafeAreaAccessory`
@@ -69,10 +69,15 @@ What the OS and the app draw over, on the screen (or the provider).
 type SafeAreaRegion = {
   kind: SafeAreaRegionKind; // 'status' | 'cutout' | 'controls' | 'accessory' | 'fold' | 'inset'
   edge: Edge | null; // the edge it hugs; null for a floating one (a fold)
+  side?: Edge; // for a corner region (iPad window controls), the other edge it hugs
   frame: Rect;
   owner?: number; // the view drawing app UI; absent for system UI, which covers everything
 };
 ```
+
+A region with a `side` sits in a corner. An element moves away from its `edge` unless that takes more than half of
+its size along that axis, or `edge` isn't in its `edges`; then it moves away from `side`. A header level with an iPad
+window's controls moves past them; a whole screen starts below them.
 
 ### `useSystemControls(): SystemControls | null`
 
@@ -124,7 +129,7 @@ Views and hooks inside measure relative to the provider.
 | --- | --- |
 | `refreshSafeAreas(): void` | Re-read the OS UI right away, e.g. after your own navigation |
 | `getDiagnostics(): Promise<Record<string, unknown> \| null>` | Everything the native side can see, for bug reports. `null` where there's no native side |
-| `fixtures` | Recorded metrics: `iPhoneDuoOuterPortrait`, `iPhoneDuoOuterPortraitWithTabBar`, `iPhoneDuoOuterPortraitWithNativeHeader`, `iPhoneDuoOuterLandscape`, `iPhoneDuoInnerLandscape`, `iPhoneDuoInnerBookFold`, `iPhoneDuoInnerPortrait`, `iPhone18ProPortrait` |
+| `fixtures` | Recorded metrics: `iPhoneDuoOuterPortrait`, `iPhoneDuoOuterPortraitWithTabBar`, `iPhoneDuoOuterPortraitWithNativeHeader`, `iPhoneDuoOuterLandscape`, `iPhoneDuoInnerLandscape`, `iPhoneDuoInnerBookFold`, `iPhoneDuoInnerPortrait`, `iPhone18ProPortrait`, `iPadProFullScreen`, `iPadProWindow`, `pixel10Portrait`, `pixel10Landscape` |
 
 ### Types
 
