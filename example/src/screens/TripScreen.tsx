@@ -11,6 +11,7 @@ import {
 } from 'react-native-granular-safe-areas';
 import { AnimatedSafeAreaView } from 'react-native-granular-safe-areas/reanimated';
 import { withSpring } from 'react-native-reanimated';
+import { LightStatusBar } from '../components/LightStatusBar';
 import type { RootStackParamList } from '../navigation';
 import { useJsSheet } from '../overlays';
 import { useAvoid } from '../settings';
@@ -44,6 +45,7 @@ export function TripScreen() {
 
   return (
     <View style={styles.screen}>
+      <LightStatusBar />
       {/* Measures the screen and hands its insets to the list: whatever covers its bottom, accessories included. */}
       <SafeAreaView
         mode="none"

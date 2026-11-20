@@ -1,13 +1,16 @@
 import { StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-granular-safe-areas';
 import { EdgeMarkers } from '../components/EdgeMarkers';
 
 export function MarkersScreen() {
   return (
     <View style={styles.screen}>
-      <Text style={styles.hint}>
-        Each marker moves left only while something is beside it. Change the
-        system UI and watch them follow.
-      </Text>
+      <SafeAreaView edges={['left', 'right']}>
+        <Text style={styles.hint}>
+          Each marker moves left only while something is beside it. Change the
+          system UI and watch them follow.
+        </Text>
+      </SafeAreaView>
       <EdgeMarkers />
     </View>
   );

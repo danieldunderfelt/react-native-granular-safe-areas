@@ -61,12 +61,12 @@ function Root() {
         debug={overlay}
       >
         {navigation}
-        <StatusBar style="auto" />
+        <StatusBar style="dark" />
       </GranularSafeAreaProvider>
     ) : (
       <>
         {navigation}
-        <StatusBar style="auto" />
+        <StatusBar style="dark" />
       </>
     );
 

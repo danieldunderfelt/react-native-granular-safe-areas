@@ -9,6 +9,7 @@ import {
   useSafeAreaInsets,
   SystemBackButton,
 } from 'react-native-granular-safe-areas';
+import { LightStatusBar } from '../components/LightStatusBar';
 import type { RootStackParamList } from '../navigation';
 import { useAvoid } from '../settings';
 import { TRIPS } from '../trips';
@@ -29,6 +30,7 @@ export function TripDetailsScreen() {
 
   return (
     <View style={styles.screen}>
+      <LightStatusBar />
       <ScrollView contentContainerStyle={styles.content}>
         <View style={[styles.hero, { backgroundColor: trip.color }]}>
           <Text style={styles.heroCode}>{trip.code}</Text>
