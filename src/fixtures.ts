@@ -9,6 +9,7 @@ import type { GranularSafeAreaMetrics } from './types';
  */
 
 const base = {
+  platform: 'ios',
   layoutDirection: 'ltr',
   statusBar: null,
   barRegionInsets: null,

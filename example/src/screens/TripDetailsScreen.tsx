@@ -7,7 +7,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import {
   SafeAreaView,
   useSafeAreaInsets,
-  VerticalBarBackButton,
+  SystemBackButton,
 } from 'react-native-granular-safe-areas';
 import type { RootStackParamList } from '../navigation';
 import { useAvoid } from '../settings';
@@ -56,7 +56,7 @@ export function TripDetailsScreen() {
         </SafeAreaView>
       </ScrollView>
 
-      <VerticalBarBackButton onPress={() => navigation.goBack()}>
+      <SystemBackButton onPress={() => navigation.goBack()}>
         <Pressable
           accessibilityLabel="Back"
           onPress={() => navigation.goBack()}
@@ -64,7 +64,7 @@ export function TripDetailsScreen() {
         >
           <Text style={styles.floatingText}>‹</Text>
         </Pressable>
-      </VerticalBarBackButton>
+      </SystemBackButton>
 
       {/* Moved in next to the status cluster on the Duo; stays in the corner elsewhere. */}
       <SafeAreaView

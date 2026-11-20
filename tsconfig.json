@@ -4,6 +4,9 @@
     "paths": {
       "react-native-granular-safe-areas": [
         "./src/index"
+      ],
+      "react-native-granular-safe-areas/*": [
+        "./src/*"
       ]
     },
     "allowUnreachableCode": false,

@@ -1,3 +1,4 @@
+import { buildAndroidRegions, getAndroidSystemControls } from './android';
 import type {
   Edge,
   EdgeInsets,
@@ -16,8 +17,8 @@ export const EDGES: readonly Edge[] = ['top', 'right', 'bottom', 'left'];
 export const DEFAULT_AVOID: readonly SafeAreaRegionKind[] = [
   'inset',
   'status',
-  'camera',
-  'systemBar',
+  'cutout',
+  'controls',
   'accessory',
 ];
 
@@ -166,6 +167,9 @@ export function buildRegions(
   metrics: GranularSafeAreaMetrics,
   { refine = true }: BuildRegionsOptions = {}
 ): SafeAreaRegion[] {
+  if (metrics.platform === 'android') {
+    return buildAndroidRegions(metrics, { refine });
+  }
   const { width, height, insets } = metrics;
   const barEdge =
     refine && metrics.reservedRegionsSupported
@@ -195,7 +199,7 @@ export function buildRegions(
     if (!occlusion.active || covered(occlusion)) continue;
     const frame = rectOf(occlusion);
     regions.push({
-      kind: 'camera',
+      kind: 'cutout',
       edge: attachedEdge(frame, width, height),
       frame,
     });
@@ -208,7 +212,7 @@ export function buildRegions(
     const frame = intersection(bar, bounds);
     if (!frame || covered(frame)) continue;
     regions.push({
-      kind: 'systemBar',
+      kind: 'controls',
       edge: attachedEdge(frame, width, height, insets),
       frame,
       ...ownerOf(bar),
@@ -272,7 +276,7 @@ function refineBand(
     const clipped = intersection(bar, band);
     if (!clipped) continue;
     regions.push({
-      kind: 'systemBar',
+      kind: 'controls',
       edge,
       frame: {
         x: band.x,
@@ -405,6 +409,73 @@ export function verticalBarBackButtonFrame(bar: VerticalBar): Rect | null {
   return bar.items.some((item) => overlaps(item, frame)) ? null : frame;
 }
 
+/**
+ * The strip along one edge where the system puts its controls and yours may join: the iPhone Duo's vertical bar, an
+ * Android caption bar. What's in it, and where it's free.
+ */
+export type SystemControls = {
+  /** The edge the strip runs along. */
+  edge: Edge;
+  /** The whole strip: the inset band on that edge. */
+  strip: Rect;
+  /** What the system has in the strip: the status cluster, its controls, and the end beyond where controls may go. */
+  occupied: Rect[];
+  /** The stretches of the strip nothing occupies, where your own controls may go, from start to end. */
+  free: Rect[];
+  /** The size of the system's own controls in the strip. */
+  itemSize: number;
+  /** The line the system centers its controls on, across the strip: an x for a vertical strip, a y for a horizontal one. */
+  center: number;
+};
+
+/**
+ * The system controls strip where these metrics are, or `null` when there isn't one, or the platform can't say what's
+ * in it. `extra` adds controls of your own that sit in the strip, such as the system back button.
+ */
+export function getSystemControls(
+  metrics: GranularSafeAreaMetrics,
+  extra: readonly Rect[] = []
+): SystemControls | null {
+  if (metrics.platform === 'android') {
+    return getAndroidSystemControls(metrics, extra);
+  }
+  const bar = getVerticalBar(metrics);
+  if (!bar) return null;
+  const { column } = bar;
+  const across = (y: number, height: number): Rect => ({
+    x: column.x,
+    y,
+    width: column.width,
+    height,
+  });
+  const occupied: Rect[] = [];
+  if (bar.top > column.y) occupied.push(across(column.y, bar.top - column.y));
+  for (const item of [...bar.items, ...extra]) {
+    const clipped = intersection(item, column);
+    if (clipped) occupied.push(across(clipped.y, clipped.height));
+  }
+  if (bar.bottom < maxY(column))
+    occupied.push(across(bar.bottom, maxY(column) - bar.bottom));
+  occupied.sort((a, b) => a.y - b.y);
+
+  const free: Rect[] = [];
+  let start = column.y;
+  for (const taken of occupied) {
+    if (taken.y > start) free.push(across(start, taken.y - start));
+    start = Math.max(start, maxY(taken));
+  }
+  if (start < maxY(column)) free.push(across(start, maxY(column) - start));
+
+  return {
+    edge: bar.edge,
+    strip: rectOf(column),
+    occupied,
+    free,
+    itemSize: VERTICAL_BAR_ITEM_SIZE,
+    center: bar.centerX,
+  };
+}
+
 function ownerOf(bar: SystemBarFrame): { owner?: number } {
   return bar.owner !== undefined ? { owner: bar.owner } : {};
 }
@@ -474,9 +545,11 @@ export function metricsForSubrect(
 export function metricsFromInsets(
   width: number,
   height: number,
-  insets: EdgeInsets
+  insets: EdgeInsets,
+  platform: GranularSafeAreaMetrics['platform'] = 'web'
 ): GranularSafeAreaMetrics {
   return {
+    platform,
     width,
     height,
     insets,

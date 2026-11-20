@@ -19,4 +19,11 @@ FOUNDATION_EXTERN BOOL GSAIsDrawnAbove(UIView *view, UIView *other);
 /// Whether one of the two views contains the other.
 FOUNDATION_EXTERN BOOL GSAAreRelated(UIView *view, UIView *other);
 
+/// The root view of the screen `view` is in: the view of the nearest view controller above it.
+FOUNDATION_EXTERN UIView *_Nullable GSAScreenView(UIView *view);
+
+/// The transition the screen `view` is in is part of, if one is running. A view controller transition moves screens
+/// around, and React Native lays the incoming one out as it goes, so positions are only settled once it's done.
+FOUNDATION_EXTERN id<UIViewControllerTransitionCoordinator> _Nullable GSATransitionCoordinator(UIView *view);
+
 NS_ASSUME_NONNULL_END

@@ -10,9 +10,9 @@ import {
 import {
   getDiagnostics,
   SafeAreaView,
-  useGranularSafeAreaMetrics,
   useSafeAreaRegions,
 } from 'react-native-granular-safe-areas';
+import { useGranularSafeAreaMetrics } from 'react-native-granular-safe-areas/testing';
 
 /**
  * Phase 0 probe: shows the live regions and metrics, and collects the full native diagnostics. Run it in each

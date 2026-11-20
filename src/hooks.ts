@@ -14,7 +14,9 @@ import {
   safeAreaViewInsets,
   ZERO_INSETS,
   type GranularPlacement,
+  type SystemControls,
 } from './geometry';
+import { getDefaultStore } from './defaultStore';
 import { GranularSafeAreaContext } from './GranularSafeAreaProvider';
 import type { GranularSafeAreaStore } from './store';
 import type {
@@ -27,14 +29,12 @@ import type {
   SafeAreaRegionKind,
 } from './types';
 
+/**
+ * The store of the nearest `GranularSafeAreaProvider`, or else the app's window's: no provider is needed, one only
+ * scopes a part of the app (a mock device, a custom overlay).
+ */
 export function useGranularSafeAreaStore(): GranularSafeAreaStore {
-  const store = useContext(GranularSafeAreaContext);
-  if (!store) {
-    throw new Error(
-      'No GranularSafeAreaProvider found. Render <GranularSafeAreaProvider> near the root of your app, inside <SafeAreaProvider>.'
-    );
-  }
-  return store;
+  return useContext(GranularSafeAreaContext) ?? getDefaultStore();
 }
 
 /** The regions the OS draws over, in the nearest provider's coordinates. Re-renders whenever they change. */
@@ -43,6 +43,19 @@ export function useSafeAreaRegions(): readonly SafeAreaRegion[] {
   return useSyncExternalStore(
     store.subscribe,
     () => store.getSnapshot().regions
+  );
+}
+
+/**
+ * The strip along one edge where the system puts its controls and yours may join, or `null` where there isn't one:
+ * the iPhone Duo's vertical bar (closed, or open in landscape). What's in it, where it's free, the size of the system's
+ * items and the line they're centered on, for laying out controls of your own there. Re-renders when it changes.
+ */
+export function useSystemControls(): SystemControls | null {
+  const store = useGranularSafeAreaStore();
+  return useSyncExternalStore(
+    store.subscribe,
+    () => store.getSnapshot().systemControls
   );
 }
 

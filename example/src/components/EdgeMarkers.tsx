@@ -1,8 +1,6 @@
 import { StyleSheet, Text, View } from 'react-native';
-import {
-  SafeAreaView,
-  useGranularSafeAreaMetrics,
-} from 'react-native-granular-safe-areas';
+import { SafeAreaView } from 'react-native-granular-safe-areas';
+import { useGranularSafeAreaMetrics } from 'react-native-granular-safe-areas/testing';
 import { useAvoid } from '../settings';
 
 const SPACING = 40;

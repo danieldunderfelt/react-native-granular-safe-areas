@@ -1,18 +1,28 @@
 import type { HostInstance } from 'react-native';
-import type { ScrollAxes } from './types';
+import { parseMetrics } from './metrics';
 import NativeAnchor from './specs/GranularSafeAreaAnchorNativeComponent';
-import NativeBarButton from './specs/GranularSafeAreaBarButtonNativeComponent';
 import ProviderView, {
   Commands,
 } from './specs/GranularSafeAreaProviderViewNativeComponent';
-import NativeGranularSafeAreas from './specs/NativeGranularSafeAreas';
 import NativeView from './specs/GranularSafeAreaViewNativeComponent';
+import NativeGranularSafeAreas from './specs/NativeGranularSafeAreas';
+import type { GranularSafeAreaMetrics, ScrollAxes } from './types';
 
 export const NativeProviderView = ProviderView;
-export const BarButtonView = NativeBarButton;
 export const AnchorView = NativeAnchor;
 /** Measures itself natively, and follows its own position when it's dynamic. */
 export const NativeSafeAreaView: typeof NativeView | null = NativeView;
+
+/** The system back button is drawn natively, by its anchor, in its own screen. */
+export const nativeHostsBackButton = true;
+
+export function BackButtonStandIn(_props: {
+  systemImage: string;
+  label?: string;
+  onPress: () => unknown;
+}) {
+  return null;
+}
 
 export const canTrackScrollFromJS = false;
 
@@ -33,6 +43,26 @@ export function refreshNativeProvider(view: HostInstance | null) {
 
 export function getInitialWindowMetricsJSON(): string | null {
   return NativeGranularSafeAreas?.getConstants().initialWindowMetrics || null;
+}
+
+/**
+ * Follows the app's window, for apps without a provider: an empty view behind everything in the window reports its
+ * metrics, the way a provider reports its own.
+ */
+export function observeWindowMetrics(
+  listener: (metrics: GranularSafeAreaMetrics) => void
+): () => void {
+  if (!NativeGranularSafeAreas) return () => {};
+  const subscription = NativeGranularSafeAreas.onWindowMetricsChange((json) => {
+    const metrics = parseMetrics(json);
+    if (metrics) listener(metrics);
+  });
+  NativeGranularSafeAreas.observeWindow();
+  return () => subscription.remove();
+}
+
+export function refreshWindowMetrics() {
+  NativeGranularSafeAreas?.refreshWindow();
 }
 
 export function getDiagnosticsJSON(): Promise<string | null> {

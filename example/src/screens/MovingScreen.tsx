@@ -1,6 +1,15 @@
-import { useEffect, useRef, useState } from 'react';
-import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-granular-safe-areas';
+import { AnimatedSafeAreaView } from 'react-native-granular-safe-areas/reanimated';
+import Animated, {
+  cancelAnimation,
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
 import { useAvoid } from '../settings';
 
 const BEHAVIORS = [
@@ -22,40 +31,44 @@ const BEHAVIORS = [
     props: { dynamic: true },
     color: '#34c759',
   },
+  {
+    label: 'dynamic, springy',
+    note: 'The same, animated with Reanimated',
+    props: { dynamic: true, transition: spring },
+    color: '#007aff',
+  },
 ] as const;
 
 const ROW = 44;
 
+function spring(to: number) {
+  'worklet';
+  return withSpring(to, { damping: 18, stiffness: 220 });
+}
+
 /**
- * Three pills on the right edge, moved up and down together by an animation on Animated's native driver, so nothing
- * runs in JavaScript while they move. Only the dynamic one follows its position. Tap to pause.
+ * Pills on the right edge, moved up and down together by a Reanimated animation on the UI thread, so nothing runs in
+ * JavaScript while they move. Only the dynamic ones follow their position; the last one animates the change. Tap to
+ * pause.
  */
 export function MovingScreen() {
   const avoid = useAvoid();
-  const progress = useRef(new Animated.Value(0)).current;
+  const progress = useSharedValue(0);
   const [running, setRunning] = useState(true);
   const [height, setHeight] = useState(0);
   const travel = Math.max(0, height - BEHAVIORS.length * ROW);
 
   useEffect(() => {
-    if (!running) return undefined;
-    const animation = Animated.loop(
-      Animated.sequence([
-        Animated.timing(progress, {
-          toValue: 1,
-          duration: 6000,
-          useNativeDriver: true,
-        }),
-        Animated.timing(progress, {
-          toValue: 0,
-          duration: 6000,
-          useNativeDriver: true,
-        }),
-      ])
-    );
-    animation.start();
-    return () => animation.stop();
+    if (!running) {
+      cancelAnimation(progress);
+      return;
+    }
+    progress.value = withRepeat(withTiming(1, { duration: 6000 }), -1, true);
   }, [running, progress]);
+
+  const slide = useAnimatedStyle(() => ({
+    transform: [{ translateY: progress.value * travel }],
+  }));
 
   return (
     <Pressable
@@ -76,24 +89,10 @@ export function MovingScreen() {
           {running ? 'Tap to pause.' : 'Paused. Tap to move.'}
         </Text>
       </SafeAreaView>
-      <Animated.View
-        style={[
-          styles.slider,
-          {
-            transform: [
-              {
-                translateY: progress.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [0, travel],
-                }),
-              },
-            ],
-          },
-        ]}
-      >
+      <Animated.View style={[styles.slider, slide]}>
         {BEHAVIORS.map((behavior) => (
           <View key={behavior.label} style={styles.row}>
-            <SafeAreaView
+            <AnimatedSafeAreaView
               {...behavior.props}
               mode="offset"
               edges={['right']}
@@ -102,7 +101,7 @@ export function MovingScreen() {
               style={[styles.pill, { backgroundColor: behavior.color }]}
             >
               <Text style={styles.pillText}>{behavior.label}</Text>
-            </SafeAreaView>
+            </AnimatedSafeAreaView>
           </View>
         ))}
       </Animated.View>

@@ -129,7 +129,7 @@ describe('GranularSafeAreaStore', () => {
         frame: { x: 394, y: 174, width: 48, height: 48 },
       });
       expect(regions).toContainEqual({
-        kind: 'systemBar',
+        kind: 'controls',
         edge: 'right',
         frame: { x: 382, y: 174, width: 84, height: 48 },
         // Drawn by the button, so a sheet over it ignores it.

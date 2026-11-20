@@ -40,7 +40,7 @@ describe('buildRegions', () => {
         frame: { x: 382, y: 0, width: 84, height: 174 },
       },
       {
-        kind: 'systemBar',
+        kind: 'controls',
         edge: 'right',
         frame: { x: 382, y: 492, width: 84, height: 162 },
       },
@@ -116,11 +116,7 @@ describe('buildRegions', () => {
       ...duoTabs,
       systemBars: [{ x: 0, y: 24, width: 466, height: 58 }],
     });
-    expect(regions.map((r) => r.kind)).toEqual([
-      'status',
-      'inset',
-      'systemBar',
-    ]);
+    expect(regions.map((r) => r.kind)).toEqual(['status', 'inset', 'controls']);
   });
 
   it('splits the column around the back button UIKit puts below the status cluster', () => {
@@ -128,7 +124,7 @@ describe('buildRegions', () => {
       fixtures.iPhoneDuoOuterPortraitWithNativeHeader
     );
     expect(regions).toContainEqual({
-      kind: 'systemBar',
+      kind: 'controls',
       edge: 'right',
       frame: { x: 382, y: 174, width: 84, height: 48 },
     });
@@ -141,10 +137,10 @@ describe('buildRegions', () => {
       systemBars: [...duoTabs.systemBars, toolbar],
     });
     expect(
-      regions.filter((r) => r.kind === 'systemBar' && r.frame.x === 382)
+      regions.filter((r) => r.kind === 'controls' && r.frame.x === 382)
     ).toHaveLength(1);
     expect(regions).toContainEqual({
-      kind: 'systemBar',
+      kind: 'controls',
       edge: 'bottom',
       frame: toolbar,
     });
@@ -156,7 +152,7 @@ describe('buildRegions', () => {
       fixtures.iPhoneDuoOuterPortraitWithNativeHeader
     );
     expect(regions).toContainEqual({
-      kind: 'systemBar',
+      kind: 'controls',
       edge: 'top',
       frame: { x: 0, y: 24, width: 466, height: 58 },
     });
@@ -174,6 +170,7 @@ describe('buildRegions', () => {
   it('frees the column in a sheet that starts below the status cluster', () => {
     // Recorded: a form sheet on the outer display. UIKit's bar region starts at the top of the sheet.
     const sheet: GranularSafeAreaMetrics = {
+      platform: 'ios',
       width: 450,
       height: 341.6666564941406,
       insets: { top: 0, right: 76, bottom: 33.999989827473996, left: 0 },
@@ -256,7 +253,7 @@ describe('buildRegions', () => {
     });
     expect(regions).toEqual([
       {
-        kind: 'camera',
+        kind: 'cutout',
         edge: 'top',
         frame: { x: 300, y: 0, width: 100, height: 30 },
       },
@@ -620,7 +617,7 @@ describe('the native side', () => {
 
   it('gets the regions to avoid, already filtered and grown', () => {
     expect(
-      trackedRegions(regions, { avoid: ['status', 'systemBar'], spacing: 4 })
+      trackedRegions(regions, { avoid: ['status', 'controls'], spacing: 4 })
     ).toEqual([
       { x: 378, y: -4, width: 92, height: 182, edge: 2, owner: 0, band: false },
       {
@@ -755,7 +752,12 @@ describe('parseMetrics', () => {
       })
     );
     expect(minimal).toEqual<GranularSafeAreaMetrics>({
-      ...metricsFromInsets(100, 200, { top: 1, right: 2, bottom: 3, left: 4 }),
+      ...metricsFromInsets(
+        100,
+        200,
+        { top: 1, right: 2, bottom: 3, left: 4 },
+        'ios'
+      ),
       // Unknown counts as visible, which keeps bands whole.
       barContainersVisible: true,
     });
@@ -822,12 +824,12 @@ describe('UIKit bars outside the column', () => {
 
   it('turns a navigation bar under the status bar into a top region, and a tab bar into a bottom one', () => {
     expect(regions).toContainEqual({
-      kind: 'systemBar',
+      kind: 'controls',
       edge: 'top',
       frame: navigationBar,
     });
     expect(regions).toContainEqual({
-      kind: 'systemBar',
+      kind: 'controls',
       edge: 'bottom',
       frame: tabBar,
     });

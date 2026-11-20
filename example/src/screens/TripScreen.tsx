@@ -7,8 +7,10 @@ import {
   useSafeAreaInsets,
   useSafeAreaInsetsFor,
   useSafeAreaViewInsets,
-  VerticalBarBackButton,
+  SystemBackButton,
 } from 'react-native-granular-safe-areas';
+import { AnimatedSafeAreaView } from 'react-native-granular-safe-areas/reanimated';
+import { withSpring } from 'react-native-reanimated';
 import type { RootStackParamList } from '../navigation';
 import { useJsSheet } from '../overlays';
 import { useAvoid } from '../settings';
@@ -16,12 +18,17 @@ import { TRIPS } from '../trips';
 
 const HEADER_HEIGHT = 60;
 
+function spring(to: number) {
+  'worklet';
+  return withSpring(to, { damping: 18, stiffness: 220 });
+}
+
 /**
  * A layout like the one in the README's screenshot: a custom header, a scrolling list of cards with a badge, and
  * floating controls. It shows each behavior: the list content keeps clear of the whole column (the default), the
  * floating controls avoid only what's beside them (`granular`), and the badges follow their cards as they scroll
  * (`dynamic`). The next flight bar at the bottom is an accessory: the list ends above it, while the overlays opened
- * from the list cover it and ignore it. The header uses manual insets, and its back button `VerticalBarBackButton`.
+ * from the list cover it and ignore it. The header uses manual insets, and its back button `SystemBackButton`.
  */
 export function TripScreen() {
   const navigation =
@@ -61,11 +68,11 @@ export function TripScreen() {
       >
         {navigation.canGoBack() ? (
           // On the iPhone Duo this button moves into the vertical bar, below the status cluster.
-          <VerticalBarBackButton onPress={() => navigation.goBack()}>
+          <SystemBackButton onPress={() => navigation.goBack()}>
             <Pressable onPress={() => navigation.goBack()} hitSlop={12}>
               <Text style={styles.back}>‹</Text>
             </Pressable>
-          </VerticalBarBackButton>
+          </SystemBackButton>
         ) : null}
         <Text style={styles.headerTitle} numberOfLines={1}>
           Please sign in again
@@ -153,17 +160,18 @@ function TripList({ top }: { top: number }) {
             <View style={[styles.picture, { backgroundColor: trip.color }]}>
               <Text style={styles.pictureCode}>{trip.code}</Text>
             </View>
-            {/* Dynamic: the badge follows its card, and moves in only while it passes a region. */}
-            <SafeAreaView
+            {/* Dynamic: the badge follows its card, and springs in only while it passes a region. */}
+            <AnimatedSafeAreaView
               dynamic
               mode="offset"
               edges={['left', 'right']}
               spacing={4}
               avoid={avoid}
+              transition={spring}
               style={styles.badge}
             >
               <Text style={styles.badgeText}>Check-in open</Text>
-            </SafeAreaView>
+            </AnimatedSafeAreaView>
             <SafeAreaView
               edges={['left', 'right']}
               avoid={avoid}

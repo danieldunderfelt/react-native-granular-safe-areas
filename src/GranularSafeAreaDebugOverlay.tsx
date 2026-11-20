@@ -1,29 +1,30 @@
 import { StyleSheet, Text, View } from 'react-native';
-import { useSafeAreaRegions } from './hooks';
+import { useSyncExternalStore } from 'react';
+import type { GranularSafeAreaStore } from './store';
 import type { SafeAreaRegionKind } from './types';
 
 const COLORS: Record<SafeAreaRegionKind, string> = {
   inset: 'rgba(255, 149, 0, 0.35)',
   status: 'rgba(255, 45, 85, 0.4)',
-  camera: 'rgba(175, 82, 222, 0.45)',
-  systemBar: 'rgba(0, 122, 255, 0.4)',
+  cutout: 'rgba(175, 82, 222, 0.45)',
+  controls: 'rgba(0, 122, 255, 0.4)',
   accessory: 'rgba(90, 200, 250, 0.4)',
   fold: 'rgba(52, 199, 89, 0.4)',
 };
 
-export type GranularSafeAreaDebugOverlayProps = {
-  /** Label each region with its kind. Defaults to `true`. */
-  labels?: boolean;
-};
-
 /**
- * Draws the regions of the nearest provider on top of the app. Render it as a direct child of
- * `GranularSafeAreaProvider`, after your content. It ignores touches.
+ * Draws a provider's regions on top of everything in it, labelled with their kinds: `<GranularSafeAreaProvider
+ * debug>`. It ignores touches.
  */
 export function GranularSafeAreaDebugOverlay({
-  labels = true,
-}: GranularSafeAreaDebugOverlayProps) {
-  const regions = useSafeAreaRegions();
+  store,
+}: {
+  store: GranularSafeAreaStore;
+}) {
+  const regions = useSyncExternalStore(
+    store.subscribe,
+    () => store.getSnapshot().regions
+  );
   return (
     <View style={styles.overlay}>
       {regions.map((region, index) => (
@@ -40,11 +41,9 @@ export function GranularSafeAreaDebugOverlay({
             },
           ]}
         >
-          {labels ? (
-            <Text style={styles.label} numberOfLines={1}>
-              {region.kind}
-            </Text>
-          ) : null}
+          <Text style={styles.label} numberOfLines={1}>
+            {region.kind}
+          </Text>
         </View>
       ))}
     </View>

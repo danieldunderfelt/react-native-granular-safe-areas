@@ -2,6 +2,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -29,11 +30,14 @@ import {
 } from './geometry';
 import { parseMetrics } from './metrics';
 import {
-  BarButtonView,
+  BackButtonStandIn,
   getInitialWindowMetricsJSON,
+  nativeHostsBackButton,
   NativeProviderView,
   refreshNativeProvider,
 } from './nativeBridge';
+import { GranularSafeAreaDebugOverlay } from './GranularSafeAreaDebugOverlay';
+import { registerStore } from './refresh';
 import type { MetricsChangeEvent } from './specs/GranularSafeAreaProviderViewNativeComponent';
 import { GranularSafeAreaStore } from './store';
 import type { GranularSafeAreaMetrics, Rect } from './types';
@@ -46,15 +50,18 @@ GranularSafeAreaContext.displayName = 'GranularSafeAreaContext';
 export type GranularSafeAreaProviderProps = ViewProps & {
   children?: ReactNode;
   /**
-   * Use recorded metrics instead of the platform's, in the provider's coordinate space. For previews and tests; see
-   * `fixtures`.
+   * Use recorded metrics instead of the platform's, in the provider's coordinate space: lay out for the iPhone Duo on
+   * any device or in a browser. For previews and tests; see `fixtures`.
    */
   mock?: GranularSafeAreaMetrics | null;
   /**
    * Break inset bands down into the regions inside them where the platform allows it. `false` makes every region a
-   * whole band, the same as a regular safe area. Defaults to `true`.
+   * whole band, so every view inside behaves like a regular safe area, `granular` and `dynamic` ones too. For
+   * comparing. Defaults to `true`.
    */
-  refine?: boolean;
+  granular?: boolean;
+  /** Draw the regions over the app, to see what views avoid. */
+  debug?: boolean;
 };
 
 let initialWindowMetrics: GranularSafeAreaMetrics | null | undefined;
@@ -79,7 +86,8 @@ export function measureRect(node: HostInstance | null): Rect | null {
 export function GranularSafeAreaProvider({
   children,
   mock,
-  refine = true,
+  granular = true,
+  debug = false,
   style,
   onLayout,
   ...rest
@@ -98,9 +106,10 @@ export function GranularSafeAreaProvider({
   const [layout, setLayout] = useState<Rect | null>(null);
   const safeAreaInsets = useContext(SafeAreaInsetsContext);
   const safeAreaFrame = useContext(SafeAreaFrameContext);
-  // A nested provider (a modal, a sheet) can sit anywhere, even in another window, so the key window's metrics
-  // can't stand in for its first frame.
+  // A nested provider (a custom overlay) can sit anywhere, so the key window's metrics can't stand in for its first
+  // frame.
   const isNested = useContext(GranularSafeAreaContext) !== null;
+  useEffect(() => registerStore(store), [store]);
 
   const measureSelf = useCallback(() => {
     const rect = measureRect(providerRef.current);
@@ -153,8 +162,8 @@ export function GranularSafeAreaProvider({
   }, [mock, nativeMetrics, layout, isNested, safeAreaInsets, safeAreaFrame]);
 
   const regions = useMemo(
-    () => (metrics ? buildRegions(metrics, { refine }) : []),
-    [metrics, refine]
+    () => (metrics ? buildRegions(metrics, { refine: granular }) : []),
+    [metrics, granular]
   );
   const bands = useMemo(
     () => (metrics ? buildRegions(metrics, { refine: false }) : []),
@@ -177,29 +186,28 @@ export function GranularSafeAreaProvider({
         onMetricsChange={handleMetricsChange}
       >
         {children}
-        <VerticalBarBackButtonHost store={store} />
+        {nativeHostsBackButton ? null : <BackButtonStandInHost store={store} />}
+        {debug ? <GranularSafeAreaDebugOverlay store={store} /> : null}
       </NativeProviderView>
     </GranularSafeAreaContext.Provider>
   );
 }
 
-/** Draws the back button a screen put in the vertical bar with `VerticalBarBackButton`, over everything else. */
-function VerticalBarBackButtonHost({
-  store,
-}: {
-  store: GranularSafeAreaStore;
-}) {
+/**
+ * Where the system back button isn't drawn natively (mocked layouts on the web), draws a stand-in for the one a screen
+ * offers with `SystemBackButton`, over everything else.
+ */
+function BackButtonStandInHost({ store }: { store: GranularSafeAreaStore }) {
   const button = useSyncExternalStore(
     store.subscribe,
     () => store.getSnapshot().backButton
   );
   if (!button) return null;
   return (
-    <BarButtonView
+    <BackButtonStandIn
       systemImage={button.icon === 'close' ? 'xmark' : 'chevron.backward'}
       label={button.accessibilityLabel}
-      ownerId={store.backButtonOwnerId}
-      onBarButtonPress={store.pressBackButton}
+      onPress={store.pressBackButton}
       style={[
         styles.barButton,
         {

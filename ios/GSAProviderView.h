@@ -10,6 +10,9 @@ NS_ASSUME_NONNULL_BEGIN
 /// same window as the root provider, which covers it.
 + (nullable GSAProviderView *)providerForView:(UIView *)view;
 
+/// Re-scans the bars and reports if anything changed.
+- (void)refresh;
+
 @end
 
 NS_ASSUME_NONNULL_END

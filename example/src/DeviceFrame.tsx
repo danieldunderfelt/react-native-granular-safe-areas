@@ -3,9 +3,9 @@ import { StyleSheet, Text, View } from 'react-native';
 import {
   SafeAreaFrameContext,
   SafeAreaInsetsContext,
-  getVerticalBar,
   type GranularSafeAreaMetrics,
 } from 'react-native-granular-safe-areas';
+import { getSystemControls } from 'react-native-granular-safe-areas/testing';
 
 /**
  * Web preview of a recorded device: a frame of the device's size that feeds the recorded insets to
@@ -40,7 +40,15 @@ export function DeviceFrame({
 
 function FakeSystemUI({ metrics }: { metrics: GranularSafeAreaMetrics }) {
   const { occlusions, systemBars, divisions, width, height } = metrics;
-  const bar = getVerticalBar(metrics);
+  const controls = getSystemControls(metrics);
+  // The status cluster is what the strip starts with.
+  const cluster = controls?.occupied.find((r) => r.y <= controls.strip.y + 0.5);
+  const bar = controls
+    ? {
+        column: controls.strip,
+        top: cluster ? cluster.y + cluster.height : controls.strip.y,
+      }
+    : null;
   // The occlusion that covers the whole status cluster isn't a camera; draw only the cameras inside it.
   const cameras = occlusions.filter(
     (o) => o.active && !(bar && o.width >= bar.column.width - 1)

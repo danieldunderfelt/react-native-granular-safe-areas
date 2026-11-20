@@ -1,6 +1,7 @@
 #import "GSAModule.h"
 
 #import "GSAMetrics.h"
+#import "GSAWindowObserver.h"
 
 #import <React/RCTUtils.h>
 
@@ -45,6 +46,19 @@
 - (void)getDiagnostics:(RCTPromiseResolveBlock)resolve reject:(RCTPromiseRejectBlock)reject
 {
   resolve(GSAJSONString(GSADiagnostics()));
+}
+
+- (void)observeWindow
+{
+  __weak __typeof(self) weakSelf = self;
+  [[GSAWindowObserver shared] startWithHandler:^(NSString *payload) {
+    [weakSelf emitOnWindowMetricsChange:payload];
+  }];
+}
+
+- (void)refreshWindow
+{
+  [[GSAWindowObserver shared] refresh];
 }
 
 - (std::shared_ptr<facebook::react::TurboModule>)getTurboModule:

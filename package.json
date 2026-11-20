@@ -10,15 +10,36 @@
       "types": "./lib/typescript/src/index.d.ts",
       "default": "./lib/module/index.js"
     },
+    "./testing": {
+      "react-native-granular-safe-areas-source": "./src/testing.ts",
+      "types": "./lib/typescript/src/testing.d.ts",
+      "default": "./lib/module/testing.js"
+    },
+    "./reanimated": {
+      "react-native-granular-safe-areas-source": "./src/reanimated.tsx",
+      "types": "./lib/typescript/src/reanimated.d.ts",
+      "default": "./lib/module/reanimated.js"
+    },
+    "./jest": {
+      "react-native-granular-safe-areas-source": "./src/jest.tsx",
+      "types": "./lib/typescript/src/jest.d.ts",
+      "default": "./lib/module/jest.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
     "src",
     "lib",
     "ios",
+    "android",
     "*.podspec",
     "react-native.config.js",
     "!ios/build",
+    "!android/build",
+    "!android/gradle",
+    "!android/gradlew",
+    "!android/gradlew.bat",
+    "!android/local.properties",
     "!**/__tests__",
     "!**/__fixtures__",
     "!**/__mocks__",
@@ -72,14 +93,26 @@
     "react": "19.3.0",
     "react-native": "0.88.1",
     "react-native-builder-bob": "^0.44.1",
+    "react-native-reanimated": "4.7.1",
     "react-native-safe-area-context": "5.11.1",
+    "react-native-worklets": "0.13.0",
     "turbo": "^2.11.10",
     "typescript": "^6.0.3"
   },
   "peerDependencies": {
     "react": "*",
     "react-native": ">=0.82.0",
-    "react-native-safe-area-context": ">=5.11.0"
+    "react-native-safe-area-context": ">=5.11.0",
+    "react-native-reanimated": ">=4.0.0",
+    "react-native-worklets": ">=0.5.0"
+  },
+  "peerDependenciesMeta": {
+    "react-native-reanimated": {
+      "optional": true
+    },
+    "react-native-worklets": {
+      "optional": true
+    }
   },
   "packageManager": "pnpm@12.21.0",
   "react-native-builder-bob": {
@@ -109,9 +142,6 @@
         "GranularSafeAreaProviderView": {
           "className": "GSAProviderView"
         },
-        "GranularSafeAreaBarButton": {
-          "className": "GSABarButtonView"
-        },
         "GranularSafeAreaAnchor": {
           "className": "GSAAnchorView"
         },
@@ -122,6 +152,9 @@
       "modulesProvider": {
         "GranularSafeAreas": "GSAModule"
       }
+    },
+    "android": {
+      "javaPackageName": "com.granularsafeareas"
     }
   },
   "prettier": {

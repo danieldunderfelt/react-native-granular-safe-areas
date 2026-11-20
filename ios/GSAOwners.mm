@@ -53,6 +53,23 @@ UIView *_Nullable GSAOwnerView(NSInteger ownerId)
   return ownerId != 0 ? [GSAViewsById() objectForKey:@(ownerId)] : nil;
 }
 
+UIView *_Nullable GSAScreenView(UIView *view)
+{
+  for (UIView *ancestor = view.superview; ancestor != nil; ancestor = ancestor.superview) {
+    if ([ancestor.nextResponder isKindOfClass:UIViewController.class]) {
+      return ancestor;
+    }
+  }
+  return nil;
+}
+
+id<UIViewControllerTransitionCoordinator> _Nullable GSATransitionCoordinator(UIView *view)
+{
+  // A child returns its container's coordinator while the container transitions.
+  UIView *screen = GSAScreenView(view);
+  return screen != nil ? ((UIViewController *)screen.nextResponder).transitionCoordinator : nil;
+}
+
 BOOL GSAAreRelated(UIView *view, UIView *other)
 {
   return [view isDescendantOfView:other] || [other isDescendantOfView:view];

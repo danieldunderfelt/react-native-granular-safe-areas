@@ -1,75 +1,53 @@
-// Everything from react-native-safe-area-context, so one import covers all safe-area needs.
+// Everything from react-native-safe-area-context, so one import covers all safe-area needs. `SafeAreaView` below takes
+// precedence over its own.
 export * from 'react-native-safe-area-context';
 
+// A granular drop-in for react-native-safe-area-context's SafeAreaView, and app UI other views avoid.
 export {
-  GranularSafeAreaContext,
-  GranularSafeAreaProvider,
-  type GranularSafeAreaProviderProps,
-} from './GranularSafeAreaProvider';
-export type { GranularSafeAreaSnapshot, GranularSafeAreaStore } from './store';
-
-// A granular drop-in for react-native-safe-area-context's SafeAreaView. It takes precedence over the re-export above.
-export {
+  SafeAreaAccessory,
   SafeAreaView,
   useSafeAreaViewInsets,
+  type SafeAreaAccessoryProps,
   type SafeAreaViewProps,
 } from './SafeAreaView';
 
-// App UI floating over the content, which other views avoid where it's drawn on top of them.
-export { SafeAreaAccessory, type SafeAreaAccessoryProps } from './SafeAreaView';
-
-// Insets for a position you describe, applied by you. Plus raw access.
+// Insets for a position you describe, the regions themselves, and the strip the system puts its controls in.
 export {
-  useGranularSafeAreaMetrics,
-  useGranularSafeAreaStore,
   useSafeAreaInsetsFor,
   useSafeAreaRegions,
+  useSystemControls,
   type SafeAreaInsetsForOptions,
 } from './hooks';
 
-// The vertical bar: a native back button for custom headers, and the bar's layout.
+// The system back button, for screens with a custom header.
 export {
-  useVerticalBar,
-  useVerticalBarBackButton,
-  VerticalBarBackButton,
-  type UseVerticalBarBackButtonOptions,
-  type UseVerticalBarBackButtonResult,
-  type VerticalBarBackButtonProps,
-} from './VerticalBar';
-export type {
-  VerticalBarBackButtonIcon,
-  VerticalBarBackButtonState,
-} from './store';
+  SystemBackButton,
+  useSystemBackButton,
+  type SystemBackButtonIcon,
+  type SystemBackButtonProps,
+  type UseSystemBackButtonOptions,
+  type UseSystemBackButtonResult,
+} from './SystemBackButton';
 
+// Optional: recorded devices, debugging, comparing, and scoping a custom overlay.
 export {
-  GranularSafeAreaDebugOverlay,
-  type GranularSafeAreaDebugOverlayProps,
-} from './GranularSafeAreaDebugOverlay';
-export { getDiagnostics } from './diagnostics';
+  GranularSafeAreaProvider,
+  type GranularSafeAreaProviderProps,
+} from './GranularSafeAreaProvider';
 export { fixtures, type FixtureName } from './fixtures';
-export {
-  buildRegions,
-  computeElementInsets,
-  getVerticalBar,
-  metricsForSubrect,
-  placementToRect,
-  safeAreaViewInsets,
-  verticalBarBackButtonFrame,
-  VERTICAL_BAR_ITEM_SIZE,
-  type BuildRegionsOptions,
-  type ElementInsetsOptions,
-  type GranularPlacement,
-  type SafeAreaViewInsetsOptions,
-  type VerticalBar,
-} from './geometry';
-export { parseMetrics } from './metrics';
+
+export { refreshSafeAreas } from './refresh';
+export { getDiagnostics } from './diagnostics';
+
+export type { GranularPlacement, SystemControls } from './geometry';
 export type {
+  EdgeMode,
+  EdgeRecord,
+  Edges,
   GranularInsetsOptions,
   GranularSafeAreaMetrics,
   GranularSafeAreaMode,
-  ReservedRegionFrame,
   SafeAreaRegion,
   SafeAreaRegionKind,
   ScrollAxes,
-  SystemBarFrame,
 } from './types';

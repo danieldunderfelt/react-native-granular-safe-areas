@@ -1,22 +1,23 @@
 import {
+  getSystemControls,
   getVerticalBar,
   rectsEqual,
   regionsEqual,
   verticalBarBackButtonFrame,
-  type VerticalBar,
+  type SystemControls,
 } from './geometry';
 import type { HostInstance } from 'react-native';
 import { createOwnerId } from './owners';
 import type { GranularSafeAreaMetrics, Rect, SafeAreaRegion } from './types';
 
 /** Which symbol a vertical bar back button shows: a back chevron, or a close cross for modals and sheets. */
-export type VerticalBarBackButtonIcon = 'back' | 'close';
+export type BackButtonIcon = 'back' | 'close';
 
 /** The back button the provider shows in the vertical bar. */
-export type VerticalBarBackButtonState = {
+export type BackButtonState = {
   /** Where it is, in the provider's coordinates. */
   frame: Rect;
-  icon: VerticalBarBackButtonIcon;
+  icon: BackButtonIcon;
   accessibilityLabel: string;
   /** The registration it belongs to. */
   owner: number;
@@ -29,17 +30,17 @@ export type GranularSafeAreaSnapshot = {
   bands: readonly SafeAreaRegion[];
   /** The raw platform metrics the regions were built from. `null` until the provider has been measured. */
   metrics: GranularSafeAreaMetrics | null;
-  /** The system's vertical bar where this provider is, if there is one. */
-  verticalBar: VerticalBar | null;
+  /** The strip where the system puts its controls (the iPhone Duo's vertical bar), including the back button. */
+  systemControls: SystemControls | null;
   /** The back button shown in the vertical bar, if any. */
-  backButton: VerticalBarBackButtonState | null;
+  backButton: BackButtonState | null;
   /** Bumped whenever elements need to recompute: new regions, or the provider itself moved or resized. */
   version: number;
 };
 
 export type BackButtonRegistration = {
   onPress: () => unknown;
-  icon: VerticalBarBackButtonIcon;
+  icon: BackButtonIcon;
   accessibilityLabel: string;
   /** Turned off by the app, e.g. while the screen isn't focused. */
   enabled: boolean;
@@ -58,7 +59,7 @@ export class GranularSafeAreaStore {
     regions: [],
     bands: [],
     metrics: null,
-    verticalBar: null,
+    systemControls: null,
     backButton: null,
     version: 0,
   };
@@ -201,7 +202,7 @@ export class GranularSafeAreaStore {
     const active = this.activeBackButton();
     const frame =
       verticalBar && active ? verticalBarBackButtonFrame(verticalBar) : null;
-    const backButton: VerticalBarBackButtonState | null =
+    const backButton: BackButtonState | null =
       frame && active
         ? {
             frame,
@@ -216,7 +217,7 @@ export class GranularSafeAreaStore {
       backButton && verticalBar
         ? [
             {
-              kind: 'systemBar',
+              kind: 'controls',
               edge: verticalBar.edge,
               frame: {
                 x: verticalBar.column.x,
@@ -255,8 +256,12 @@ export class GranularSafeAreaStore {
       regions: regionsChanged ? regions : previous.regions,
       bands: bandsChanged ? bands : previous.bands,
       metrics,
-      verticalBar:
-        metricsChanged || regionsChanged ? verticalBar : previous.verticalBar,
+      systemControls:
+        metricsChanged || regionsChanged
+          ? metrics
+            ? getSystemControls(metrics, backButton ? [backButton.frame] : [])
+            : null
+          : previous.systemControls,
       backButton: backButtonsEqual(previous.backButton, backButton)
         ? previous.backButton
         : backButton,
@@ -274,8 +279,8 @@ export class GranularSafeAreaStore {
 }
 
 function backButtonsEqual(
-  a: VerticalBarBackButtonState | null,
-  b: VerticalBarBackButtonState | null
+  a: BackButtonState | null,
+  b: BackButtonState | null
 ) {
   if (!a || !b) return a === b;
   return (

@@ -271,6 +271,7 @@ NSDictionary *_Nullable GSAMetricsForView(UIView *view, GSAWindowBars *_Nullable
   UIEdgeInsets insets = view.safeAreaInsets;
   NSString *barEdge = GSAVerticalBarEdgeName(view.traitCollection);
   NSMutableDictionary *metrics = [@{
+    @"platform" : @"ios",
     @"width" : GSANumber(view.bounds.size.width),
     @"height" : GSANumber(view.bounds.size.height),
     @"insets" : GSAInsets(insets),

@@ -28,6 +28,7 @@ import {
   safeAreaViewInsets,
   trackedRegions,
   ZERO_INSETS,
+  type TrackedRegion,
 } from './geometry';
 import { measureRect } from './GranularSafeAreaProvider';
 import { accessoryRegion, type AccessoryOptions } from './accessory';
@@ -46,6 +47,7 @@ import { layoutAdjustment } from './style';
 import type {
   Edge,
   EdgeInsets,
+  EdgeMode,
   Edges,
   GranularInsetsOptions,
   GranularSafeAreaMode,
@@ -149,7 +151,7 @@ export function useSafeAreaViewInsets(): EdgeInsets {
   return useContext(SafeAreaViewInsetsContext);
 }
 
-type ImplProps = SafeAreaViewProps & { accessory?: AccessoryOptions };
+export type ImplProps = SafeAreaViewProps & { accessory?: AccessoryOptions };
 
 function SafeAreaViewImpl(props: ImplProps) {
   return NativeSafeAreaView ? (
@@ -182,10 +184,51 @@ function useAccessoryCleanup(
   }, [store, owner]);
 }
 
-/** iOS: measures itself natively. JS hands it the regions, and applies padding and margin when told to. */
-function NativeBackedSafeAreaView({
+/** What `useNativeSafeArea` needs: everything about a view except how it applies its insets. */
+export type NativeSafeAreaOptions = Pick<
+  ImplProps,
+  | 'edges'
+  | 'avoid'
+  | 'spacing'
+  | 'granular'
+  | 'dynamic'
+  | 'underlying'
+  | 'onInsetsChange'
+  | 'accessory'
+  | 'ref'
+>;
+
+export type NativeSafeArea = {
+  /** Props for the native view, except how it applies the insets (`applyOffset`, `reportInsets`, `margins`). */
+  props: {
+    ref: (node: HostInstance | null) => void;
+    regions: TrackedRegion[];
+    bands: TrackedRegion[];
+    edges: number;
+    granular: boolean;
+    dynamic: boolean;
+    underlying: boolean;
+    initialInsets: EdgeInsets;
+    ownerId: number;
+    onAccessoryChange?: (
+      event: NativeSyntheticEvent<AccessoryChangeEvent>
+    ) => void;
+  };
+  /** The edge modes `edges` asks for. */
+  modes: Readonly<Record<Edge, EdgeMode>>;
+  /** The insets: the first measurement from JS, then what the native side reports. */
+  insets: EdgeInsets;
+  /** Takes the insets the native side reported. */
+  report: (insets: EdgeInsets) => void;
+};
+
+/**
+ * Everything a native-backed view needs from JS: the regions it avoids, its first measurement from React Native's
+ * layout (so the first frame is right before the native side can measure), and its accessory region. `SafeAreaView`
+ * and `AnimatedSafeAreaView` differ only in how they apply the insets.
+ */
+export function useNativeSafeArea({
   edges,
-  mode = 'padding',
   avoid,
   spacing = 0,
   granular = false,
@@ -193,12 +236,8 @@ function NativeBackedSafeAreaView({
   underlying = false,
   onInsetsChange,
   accessory,
-  style,
-  children,
   ref: forwardedRef,
-  ...rest
-}: ImplProps) {
-  const NativeView = NativeSafeAreaView!;
+}: NativeSafeAreaOptions): NativeSafeArea {
   const store = useGranularSafeAreaStore();
   const modes = useEdgeModes(edges);
   const avoidKey = (avoid ?? DEFAULT_AVOID).join(',');
@@ -228,22 +267,15 @@ function NativeBackedSafeAreaView({
     [bands, avoidKey, spacing]
   );
 
-  // Padding, margin and none: the native side reports the insets, JS applies them or hands them to the children.
-  const reported = mode !== 'offset';
   const [insets, setInsets] = useState<EdgeInsets>(ZERO_INSETS);
   const onInsetsChangeRef = useRef(onInsetsChange);
   useLayoutEffect(() => {
     onInsetsChangeRef.current = onInsetsChange;
   });
-  const handleInsetsChange = useCallback(
-    ({ nativeEvent }: NativeSyntheticEvent<InsetsChangeEvent>) => {
-      const { top, right, bottom, left } = nativeEvent;
-      const next = { top, right, bottom, left };
-      setInsets((previous) => (insetsEqual(previous, next) ? previous : next));
-      onInsetsChangeRef.current?.(next);
-    },
-    []
-  );
+  const report = useCallback((next: EdgeInsets) => {
+    setInsets((previous) => (insetsEqual(previous, next) ? previous : next));
+    onInsetsChangeRef.current?.(next);
+  }, []);
 
   // An accessory tells the store where it's drawn, for the region it takes.
   useAccessoryCleanup(store, accessory);
@@ -298,8 +330,7 @@ function NativeBackedSafeAreaView({
       }
     );
     setInitialInsets(initial);
-    if (reported) setInsets(initial);
-    onInsetsChangeRef.current?.(initial);
+    report(initial);
     // Only on mount: afterwards the native side is the one source of truth.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -309,30 +340,79 @@ function NativeBackedSafeAreaView({
     store.requestRefresh();
   }, [store]);
 
+  return {
+    props: {
+      ref: setRef,
+      regions: nativeRegions,
+      bands: nativeBands,
+      edges: edgeMask(activeEdges(modes)),
+      granular,
+      dynamic,
+      underlying,
+      initialInsets,
+      ownerId: accessory?.owner ?? 0,
+      onAccessoryChange: accessory ? handleAccessoryChange : undefined,
+    },
+    modes,
+    insets,
+    report,
+  };
+}
+
+/** iOS: measures itself natively. JS hands it the regions, and applies padding and margin when told to. */
+function NativeBackedSafeAreaView({
+  edges,
+  mode = 'padding',
+  avoid,
+  spacing,
+  granular,
+  dynamic,
+  underlying,
+  onInsetsChange,
+  accessory,
+  style,
+  children,
+  ref,
+  ...rest
+}: ImplProps) {
+  const NativeView = NativeSafeAreaView!;
+  const native = useNativeSafeArea({
+    edges,
+    avoid,
+    spacing,
+    granular,
+    dynamic,
+    underlying,
+    onInsetsChange,
+    accessory,
+    ref,
+  });
+  const { report } = native;
+  const handleInsetsChange = useCallback(
+    ({ nativeEvent }: NativeSyntheticEvent<InsetsChangeEvent>) => {
+      const { top, right, bottom, left } = nativeEvent;
+      report({ top, right, bottom, left });
+    },
+    [report]
+  );
+
+  // Padding, margin and none: the native side reports the insets, JS applies them or hands them to the children.
+  const reported = mode !== 'offset';
   const adjustment =
     mode === 'padding' || mode === 'margin'
-      ? layoutAdjustment(style, insets, mode, modes)
+      ? layoutAdjustment(style, native.insets, mode, native.modes)
       : null;
   return (
     <NativeView
       {...rest}
-      ref={setRef}
-      regions={nativeRegions}
-      bands={nativeBands}
-      edges={edgeMask(activeEdges(modes))}
-      granular={granular}
-      dynamic={dynamic}
-      underlying={underlying}
+      {...native.props}
       applyOffset={mode === 'offset'}
       reportInsets={reported || onInsetsChange !== undefined}
       margins={mode === 'margin' ? adjustment?.added : ZERO_INSETS}
-      initialInsets={initialInsets}
       onInsetsChange={handleInsetsChange}
-      ownerId={accessory?.owner ?? 0}
-      onAccessoryChange={accessory ? handleAccessoryChange : undefined}
       style={adjustment?.style ? [style, adjustment.style] : style}
     >
-      <ChildInsets insets={reported ? insets : ZERO_INSETS}>
+      <ChildInsets insets={reported ? native.insets : ZERO_INSETS}>
         {children}
       </ChildInsets>
     </NativeView>
@@ -389,7 +469,7 @@ function MeasuredSafeAreaView({
   );
 }
 
-function ChildInsets({
+export function ChildInsets({
   insets,
   children,
 }: {

@@ -2,6 +2,7 @@
 
 #import "GSAOwners.h"
 #import "GSAProviderView.h"
+#import "GSAWindowObserver.h"
 
 #import <React/RCTMountingTransactionObserving.h>
 #import <react/renderer/components/GranularSafeAreasSpec/ComponentDescriptors.h>
@@ -218,19 +219,6 @@ static BOOL GSAIsBeingPresented(UIView *view)
   return controller.isBeingPresented;
 }
 
-/// The transition the screen `view` is in is part of, if one is running. A view controller transition moves screens
-/// around, and React Native lays the incoming one out as it goes, so positions are only settled once it's done.
-static id<UIViewControllerTransitionCoordinator> _Nullable GSATransitionCoordinator(UIView *view)
-{
-  for (UIView *ancestor = view.superview; ancestor != nil; ancestor = ancestor.superview) {
-    if ([ancestor.nextResponder isKindOfClass:UIViewController.class]) {
-      // A child returns its container's coordinator while the container transitions.
-      return ((UIViewController *)ancestor.nextResponder).transitionCoordinator;
-    }
-  }
-  return nil;
-}
-
 /// Layer properties that move what's inside a view. Scroll views also move their content through `contentOffset`,
 /// which is observed on the view instead of their layer's `bounds`.
 static NSArray<NSString *> *GSAObservedLayerKeys(BOOL scrollView)
@@ -274,6 +262,8 @@ static NSArray<NSString *> *GSAObservedLayerKeys(BOOL scrollView)
   BOOL _measured;
   /// The transition a static view is waiting for.
   __weak id<UIViewControllerTransitionCoordinator> _awaitedTransition;
+  /// Whether the view has been in a window before, so coming back to one is told apart from mounting.
+  BOOL _wasInWindow;
 }
 
 // Keeps the class from being stripped: it is only looked up by name. See react-native#37274.
@@ -395,6 +385,14 @@ static NSArray<NSString *> *GSAObservedLayerKeys(BOOL scrollView)
 {
   [super didMoveToWindow];
   if (self.window != nil) {
+    if (_wasInWindow) {
+      // Coming back (a full-screen modal dismissed, a screen popped back to, a tab selected again) can bring back bars
+      // that left the window with it, and nothing else reports those. The views coming back together share one scan.
+      // Mounting needs none of this: JS asks for a scan when views mount.
+      [[GSAProviderView providerForView:self] refresh];
+      [[GSAWindowObserver shared] refresh];
+    }
+    _wasInWindow = YES;
     [self refresh];
   } else {
     [self stopObserving];

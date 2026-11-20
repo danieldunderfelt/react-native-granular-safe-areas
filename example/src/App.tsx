@@ -3,7 +3,6 @@ import { StatusBar } from 'expo-status-bar';
 import { Platform } from 'react-native';
 import {
   fixtures,
-  GranularSafeAreaDebugOverlay,
   GranularSafeAreaProvider,
   SafeAreaProvider,
 } from 'react-native-granular-safe-areas';
@@ -42,22 +41,34 @@ function Root() {
   const metrics =
     recorded && liveActivity ? withLiveActivity(recorded) : recorded;
 
-  const app = (
-    <GranularSafeAreaProvider
-      // Remount when the simulated device changes, so nothing measured for the old one lingers.
-      key={fixture ?? 'device'}
-      mock={metrics}
-      refine={avoidance === 'granular'}
-    >
-      <JsSheetProvider>
-        <NavigationContainer linking={linking}>
-          <RootStack />
-        </NavigationContainer>
-      </JsSheetProvider>
-      {overlay ? <GranularSafeAreaDebugOverlay /> : null}
-      <StatusBar style="auto" />
-    </GranularSafeAreaProvider>
+  const navigation = (
+    <JsSheetProvider>
+      <NavigationContainer linking={linking}>
+        <RootStack />
+      </NavigationContainer>
+    </JsSheetProvider>
   );
+
+  // No provider is needed: views follow the app's window on their own. One only comes in to simulate a recorded
+  // device, to compare with plain bands, or to draw the regions.
+  const app =
+    metrics || overlay || avoidance !== 'granular' ? (
+      <GranularSafeAreaProvider
+        // Remount when the simulated device changes, so nothing measured for the old one lingers.
+        key={fixture ?? 'device'}
+        mock={metrics}
+        granular={avoidance === 'granular'}
+        debug={overlay}
+      >
+        {navigation}
+        <StatusBar style="auto" />
+      </GranularSafeAreaProvider>
+    ) : (
+      <>
+        {navigation}
+        <StatusBar style="auto" />
+      </>
+    );
 
   return metrics ? <DeviceFrame metrics={metrics}>{app}</DeviceFrame> : app;
 }

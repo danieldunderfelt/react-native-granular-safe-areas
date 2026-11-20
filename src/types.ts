@@ -10,19 +10,21 @@ import type {
 export type { Edge, EdgeInsets, EdgeMode, EdgeRecord, Edges, Rect };
 
 /**
- * What occupies a region.
+ * What occupies a region. The kinds describe what's there, not which device it's on.
  *
- * - `inset`: a whole safe-area inset band the library could not break down any further. Same as a regular safe area.
- * - `status`: the status cluster. The status bar plus the camera and Dynamic Island next to it.
- * - `camera`: a camera or other occlusion outside the bands.
- * - `systemBar`: a UIKit bar drawn over the app: the iPhone Duo vertical tab bar or toolbar, or a navigation, tab or
- *   tool bar elsewhere. It follows the bar as it grows, shrinks, appears and disappears.
+ * - `status`: the status bar and what's in it: time, signal, battery. On the iPhone Duo, the whole status cluster.
+ * - `cutout`: a camera or sensor housing outside the bands: a punch-hole, the Dynamic Island, the iPhone Duo's camera.
+ * - `controls`: controls drawn over the app: UIKit's navigation, tab and tool bars and the iPhone Duo's vertical bar
+ *   items, the window buttons of an Android caption bar, the system back button. They follow the bars as they grow,
+ *   shrink, appear and disappear.
  * - `accessory`: app UI floating over the content, marked with `SafeAreaAccessory`: a boarding pass button, a mini
  *   player, a tab bar drawn in JS.
- * - `fold`: an active fold (a division) of a foldable display.
+ * - `fold`: an active fold or hinge of a foldable display.
+ * - `inset`: a whole safe-area inset band the platform didn't break down further, avoided as a whole, like a regular
+ *   safe area.
  */
 export type SafeAreaRegionKind =
-  'inset' | 'status' | 'camera' | 'systemBar' | 'accessory' | 'fold';
+  'inset' | 'status' | 'cutout' | 'controls' | 'accessory' | 'fold';
 
 /** A rectangle the OS or the app draws over, in the provider's coordinate space. */
 export type SafeAreaRegion = {
@@ -51,6 +53,8 @@ export type ReservedRegionFrame = Rect & { active: boolean };
  * {@link SafeAreaRegion}s, so all of the decision logic lives in one testable place.
  */
 export type GranularSafeAreaMetrics = {
+  /** Where the facts come from. Each platform has its own way of breaking the bands down. */
+  platform: 'ios' | 'android' | 'web';
   width: number;
   height: number;
   /** The regular safe-area insets of the provider. */
@@ -84,6 +88,25 @@ export type GranularSafeAreaMetrics = {
   barItemsKnown: boolean;
   /** Whether the runtime and the SDK the app was built with support reserved regions (iOS 27.1+). */
   reservedRegionsSupported: boolean;
+  /** Android: what each inset is made of, to break the bands down. Absent elsewhere. */
+  android?: AndroidInsetSources;
+};
+
+/** Android: the parts of the provider's insets, by what the system draws there, in the provider's coordinate space. */
+export type AndroidInsetSources = {
+  /** The status and navigation bars. */
+  bars: EdgeInsets;
+  /** The caption bar: the title bar of a window in desktop windowing. Its window buttons are in `systemBars`. */
+  caption: EdgeInsets;
+  /** The display cutout. Its camera housings are in `occlusions`. */
+  cutout: EdgeInsets;
+  /**
+   * Whether the app draws the caption bar's background itself (`APPEARANCE_TRANSPARENT_CAPTION_BAR_BACKGROUND`), so
+   * only the window buttons in it cover the app.
+   */
+  captionTransparent: boolean;
+  /** The display's rounded corners inside the provider: a square the size of each corner's radius. */
+  corners: Rect[];
 };
 
 /**

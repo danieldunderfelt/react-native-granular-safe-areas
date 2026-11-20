@@ -185,6 +185,9 @@ the probe on the Duo simulator, and send back the JSON.
 
 ## Status (2026-11-17)
 
+The first implementation, under its old names. Where things stand now is under
+[Next: a generic, zero-config API](#next-a-generic-zero-config-api-agreed-2026-11-20).
+
 | Phase | State |
 | --- | --- |
 | 0 Probe | Done on the Duo simulator in every pose; the four unknowns above are answered and the fixtures are recorded values. |
@@ -211,13 +214,17 @@ the probe on the Duo simulator, and send back the JSON.
    display; turn it to portrait and the custom buttons come back.
 3. **Trip screen in native tabs**: the button and the tab bar share the bar; switch tabs and it goes away.
 4. Start a timer (Live Activity) and check that the status region, the markers and the back button move down.
-5. If something is off, open **Probe**, tap **Collect diagnostics**, and send the JSON (logged to Metro with the prefix
+5. **Trip screen** overlays (the chips): each footer shows its bottom inset. Expect the home indicator only (34 on the
+   simulator, 26 for the floating form sheet), and the form sheet's content using the full width beside the column.
+6. **Moving elements**: only the dynamic pills dodge the status cluster and bar items as they pass; the springy one
+   springs.
+7. If something is off, open **Probe**, tap **Collect diagnostics**, and send the JSON (logged to Metro with the prefix
    `[granular-safe-areas probe]`, or shared from the button).
 
 ## Next: a generic, zero-config API (agreed 2026-11-20)
 
-The target API is in [docs/api.md](docs/api.md); it becomes the README once it's built. Nothing is published, so
-nothing old is kept around. In short:
+Built: the README describes it, and [docs/api.md](docs/api.md) is the reference. Nothing is published, so nothing old
+is kept around. In short:
 
 - **Nothing to set up.** No providers at the root or in modals; `GranularSafeAreaProvider` becomes optional (mocks,
   `debug`, `granular={false}`, scoping a custom overlay).
@@ -323,6 +330,38 @@ iPhones a sheet's bottom inset included the tab bar and the app's floating acces
   Native's elements have); UIKit bars are assumed to cover until the native side knows.
 - **Accessories keep their region out of the window** (another tab, under a full-screen modal): they cover nothing
   then anyway, and removing them made the screen's own content flicker on its way back.
+
+**Phase 3 status (2026-11-20): done, verified on the Duo simulator.** `react-native-granular-safe-areas/reanimated`
+exports `AnimatedSafeAreaView` (`transition`, `insets`); Reanimated and Worklets are optional peer dependencies, and the
+main entry never imports them. The native view's `onInsetsChange` goes to a `useEvent` worklet, which writes the shared
+value on the UI thread and hands the insets to JS with `scheduleOnRN` for `useSafeAreaViewInsets`. `margin` is applied
+from JS without animating. Verified: the **Moving elements** pills are moved by a Reanimated animation; the dynamic one
+follows in the same frame and the springy one springs in at the back button slot; the trip screen's badge springs too.
+
+**Phase 4 status (2026-11-20): done, verified on the Duo simulator.** No provider anywhere: `GSAWindowObserver` puts an
+empty view behind everything in the key window, which runs the same `GSAMetricsMonitor` as a provider (trait,
+reserved-region, safe-area and bar changes, scene activation, the once-a-second re-scan) and sends metrics through the
+TurboModule's `onWindowMetricsChange` event into a default store. Views outside any provider measure in window
+coordinates. `refreshSafeAreas()` re-reads right away. Different from the architecture above:
+
+- **No native region registry.** Views still get the regions as props. They change rarely, and a change re-renders the
+  views that read them, which the registry would only have saved in theory.
+- **The system back button** is drawn by the screen's own anchor view, inside the screen's root view (the nearest view
+  controller's view), so it slides with its screen. A small JS registry still picks the one to show: the most recent
+  registration that is enabled and in the window. During a push it's placed in window coordinates and re-placed once
+  the transition ends. Verified: it shows, presses, goes back, and leaves with its screen.
+- **One window.** The observer follows the key window when it starts; a second window (an iPad scene, CarPlay) needs a
+  provider for now.
+
+**Phase 5 status (2026-11-20): done except the iPad probe.** Region kinds `status`, `cutout`, `controls`, `accessory`,
+`fold`, `inset`; metrics carry `platform`; `useSystemControls` replaces the vertical bar hook and `SystemBackButton` the
+vertical bar back button; nothing Duo-specific is left in the public API. **Blocked:** the device tools here don't list
+iPad simulators, so iPad window controls aren't probed or supported yet; an iPad gets regular bands plus UIKit bars.
+
+**Phase 7 status (2026-11-20): done, except publishing.** `/jest` (a mock with the main entry's every export, checked
+by the type checker), `/testing` (geometry, metrics, store), README rewritten around the API as built,
+[docs/api.md](docs/api.md) as the reference, and the example running without a provider. Web scroll-view detection
+reads the DOM's scroll containers. The PWA title-bar area isn't supported. Publishing is left to the maintainer.
 
 ## Decisions (defaults chosen, change any)
 

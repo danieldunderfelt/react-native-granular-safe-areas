@@ -1,4 +1,5 @@
 import type {
+  AndroidInsetSources,
   EdgeInsets,
   GranularSafeAreaMetrics,
   Rect,
@@ -44,6 +45,27 @@ function parseRegions(v: unknown): ReservedRegionFrame[] {
   });
 }
 
+/** Android's breakdown of the insets. `null` unless every part of it is there: without it, the bands stay whole. */
+function parseAndroid(v: unknown): AndroidInsetSources | null {
+  if (!isObject(v)) return null;
+  const bars = parseInsets(v.bars);
+  const caption = parseInsets(v.caption);
+  const cutout = parseInsets(v.cutout);
+  if (!bars || !caption || !cutout) return null;
+  return {
+    bars,
+    caption,
+    cutout,
+    captionTransparent: v.captionTransparent === true,
+    corners: Array.isArray(v.corners)
+      ? v.corners.flatMap((r) => {
+          const rect = parseRect(r);
+          return rect ? [rect] : [];
+        })
+      : [],
+  };
+}
+
 /**
  * Parses the JSON the native side reports. Returns `null` for anything without a size and insets. Missing optional
  * facts degrade to "unknown", which makes the regions fall back to whole inset bands.
@@ -63,6 +85,10 @@ export function parseMetrics(json: string | null | undefined) {
   if (width === null || height === null || !insets) return null;
 
   const metrics: GranularSafeAreaMetrics = {
+    platform:
+      data.platform === 'android' || data.platform === 'web'
+        ? data.platform
+        : 'ios',
     width,
     height,
     insets,
@@ -88,5 +114,7 @@ export function parseMetrics(json: string | null | undefined) {
     barItemsKnown: data.barItemsKnown === true,
     reservedRegionsSupported: data.reservedRegionsSupported === true,
   };
+  const android = parseAndroid(data.android);
+  if (android) metrics.android = android;
   return metrics;
 }

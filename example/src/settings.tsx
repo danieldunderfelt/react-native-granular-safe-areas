@@ -74,7 +74,7 @@ export function SettingsProvider({
   const [avoidance, setAvoidance] = useState<Avoidance>(
     initial.avoidance ?? 'granular'
   );
-  const [overlay, setOverlay] = useState(initial.overlay ?? true);
+  const [overlay, setOverlay] = useState(initial.overlay ?? false);
   const [fixture, setFixture] = useState(initial.fixture ?? null);
   const [liveActivity, setLiveActivity] = useState(
     initial.liveActivity ?? false

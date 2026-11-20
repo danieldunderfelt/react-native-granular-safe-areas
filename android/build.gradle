@@ -1,0 +1,66 @@
+buildscript {
+  repositories {
+    google()
+    mavenCentral()
+  }
+}
+
+def getExtOrDefault(name, defaultValue) {
+  return rootProject.ext.has(name) ? rootProject.ext.get(name) : defaultValue
+}
+
+apply plugin: "com.android.library"
+
+// AGP 9 compiles Kotlin itself unless the app turns that off with `android.builtInKotlin=false`, as Expo does.
+def shouldApplyKotlinPlugin() {
+  def agpMajorVersion = com.android.Version.ANDROID_GRADLE_PLUGIN_VERSION.tokenize(".")[0].toInteger()
+  if (agpMajorVersion <= 8) {
+    return true
+  }
+  def builtInKotlin = providers.gradleProperty("android.builtInKotlin").orNull
+  return builtInKotlin != null && !builtInKotlin.toBoolean()
+}
+
+if (shouldApplyKotlinPlugin()) {
+  apply plugin: "kotlin-android"
+}
+
+// The library is New Architecture only: its views are Fabric components and its module a TurboModule.
+apply plugin: "com.facebook.react"
+
+android {
+  namespace "com.granularsafeareas"
+  compileSdkVersion getExtOrDefault("compileSdkVersion", 36)
+
+  defaultConfig {
+    minSdkVersion getExtOrDefault("minSdkVersion", 24)
+    targetSdkVersion getExtOrDefault("targetSdkVersion", 36)
+  }
+
+  lintOptions {
+    abortOnError false
+  }
+
+  sourceSets.main {
+    java.srcDirs += ["${project.buildDir}/generated/source/codegen/java"]
+  }
+}
+
+react {
+  jsRootDir = file("../src/")
+  libraryName = "GranularSafeAreasSpec"
+  codegenJavaPackageName = "com.granularsafeareas"
+}
+
+repositories {
+  google()
+  mavenCentral()
+}
+
+dependencies {
+  implementation "com.facebook.react:react-android"
+  implementation "androidx.core:core-ktx:1.13.1"
+  // Folds and hinges.
+  implementation "androidx.window:window:1.5.1"
+  implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1"
+}
