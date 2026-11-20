@@ -55,13 +55,19 @@ safe-area-context rather than replacing it.
   bar may occupy (27.1). `.safeArea(cornerAdaptation:)` (26.0) returns corner-adapted insets.
 - Bars inside UIKit containers (`UITabBarController`, `UINavigationController`) go vertical. Standalone bars don't.
 
-**Unknowns. Only the Duo simulator or a device can answer these (Phase 0):**
-1. Does the occlusion region cover the whole status cluster (time, signal), or only the camera/island? The tlon author
-   says occlusion regions expose "the cluster". Apple's HIG mentions only the camera.
-2. What does `statusBarManager.statusBarFrame` return when the status bar is vertical?
-3. What does `edgeInsets(for: .bar(onEdge: .right, extent:))` return? Its top is probably the bottom of the cluster.
-4. How can we read the frame of the system vertical bar (react-native-screens native tabs and stack header items)?
-   Which UIKit views live in the column?
+**Unknowns, answered on the Duo simulator (Xcode 27.2, iOS 27.2, 2026-11-17):**
+1. *Does the occlusion region cover the whole status cluster?* Yes. There are two active occlusion regions: the
+   camera (`37 × 37` at `399.7, 29.3`) and the whole cluster (`382, 0, 84 × 174` closed in portrait; `867, 0, 84 × 124`
+   open in landscape, where there's no camera; `0, 0, 84 × 82` closed in landscape, where the status bar is hidden).
+2. *`statusBarFrame` when vertical?* A placeholder: `0, 0, width × 2`. Useless, so it's ignored (anything under 10 pt).
+3. *`edgeInsets(for: .bar(onEdge:extent:))`?* Its top is exactly the bottom of the cluster (174 / 124 / 82), and its
+   sides center bar items on the camera (x 418), not on the column (x 424). In a sheet below the cluster its top is 0.
+4. *How to read the vertical bar?* Bar items live in `_UIFloatingBarContainerView`: a transparent view covering the
+   whole navigation or tab bar controller, one per controller. Each item group is a glass capsule inside it
+   (`UIPlatformGlassInteractionView`): the back button `48 × 48` at the top of the bar, header items in one capsule
+   12 pt below, the tab bar platter at the bottom. A `UITabBarController` also keeps an empty `UITabBar` running the
+   full height of the column, which must be ignored. The horizontal `UINavigationBar` stays at `0, 24, width × 58` for
+   the title, even though the top inset is 0.
 
 ## Design
 
@@ -106,6 +112,14 @@ Apple's HIG asks for scrollable content to stay inset. So scrolling content keep
 backgrounds may still extend to the edge. The granular behavior is for fixed UI: headers, floating buttons, bottom
 bars, overlays, maps, cameras, and full-screen layouts such as games and calculators. `GranularSafeAreaView` takes a
 `scrollable` prop (or reads a context from wrapped scroll views) and switches to band behavior there.
+
+Elements the developer picks can opt into following their live position instead: `<GranularSafeAreaView dynamic>`.
+On iOS that's a native view (`GSADynamicView`) that measures itself in the provider on the UI thread: on KVO of
+`contentOffset` for every scroll view between it and the provider (same frame as the scroll), and after every
+mounting transaction (`RCTMountingTransactionObserving`). It gets the regions as props, already filtered by `avoid`,
+grown by `spacing` and without the scrolling edges. `offset` is a layer transform composed on top of React Native's
+own; `padding` is reported to JS, since only React Native can change layout. The web re-measures on a capturing
+document scroll listener, once per frame. Native-driven animations of ancestors aren't followed.
 
 ### API sketch
 
@@ -173,39 +187,31 @@ the probe on the Duo simulator, and send back the JSON.
 
 | Phase | State |
 | --- | --- |
-| 0 Probe | Written, not run. `getDiagnostics()` (ios/GSAMetrics.mm) and the example's Probe screen. |
-| 1 JS core | Done on Linux. Automatic API (`GranularSafeAreaView`, `useGranularSafeArea` props) and manual API (`useGranularSafeAreaInsets(placement)`), on a store outside React state. Unit tests in `src/__tests__`; web simulation checked in a headless browser, including a simulated Live Activity. |
-| 2 iOS regions | Written, not compiled: `ios/GSAProviderView.mm`, `ios/GSAModule.mm`, `ios/GSAMetrics.mm`. Names checked against codegen output generated here. Reactive: layout, safe-area, trait and scene callbacks, reserved-region tracking in `updateConstraints`, KVO on bar layers, and a 1 s re-scan only while `verticalBarEdge` is set. |
-| 3 iOS system bars | First pass: UIKit bar classes (`UITabBar`, `UIToolbar`, `UINavigationBar`) plus private `_UI*VerticalBar*` classes, scanned in the provider's own presentation. Bars outside the Duo column are regions too. To be corrected from probe output. |
+| 0 Probe | Done on the Duo simulator in every pose; the four unknowns above are answered and the fixtures are recorded values. |
+| 1 JS core | Done. Automatic API (`GranularSafeAreaView`, `useGranularSafeArea` props) and manual API (`useGranularSafeAreaInsets(placement)`), on a store outside React state. 72 unit tests. |
+| 2 iOS regions | Done, verified on the simulator: compiles cleanly with Xcode 27.2; the column splits into the status cluster and bar items in every pose, and stays whole elsewhere (checked on an iPhone 18 Pro simulator). |
+| 3 iOS system bars | Done, verified on the simulator: floating bar container items (back button, header items, tab bar platter), `UITabBarController`'s placeholder `UITabBar` ignored. Adding and removing header items is picked up within 0.4 s. |
+| 3b Duo back button | Done, verified on the simulator: `VerticalBarBackButton` / `useVerticalBarBackButton`, a native glass button (`GSABarButtonView`) at UIKit's back button slot, screen visibility from a native anchor (`GSAAnchorView`). Stacks, tabs, unfolding and the outer display in landscape (bar on the left) all checked. |
 | 4 Android | Not started; Android gets regular bands from safe-area-context. |
 | 5 Hardening | Not started. |
 
-### First Mac session
+### Not verified yet
 
-1. `pnpm install`, then `pnpm example exec expo prebuild --platform ios` and `pnpm example ios`, using Xcode 27.1 and
-   the iPhone Duo simulator. Fix compile errors first. Nothing native has been compiled yet.
-2. Open **Probe** and tap **Collect diagnostics** in each of these:
-   - the plain stack (Home → Probe)
-   - **Probe with native header items**
-   - **Trip screen in native tabs** → Probe tab
-   - **Probe in a sheet**
+- **A physical Duo.** Everything above ran on the simulator only.
+- **Live Activities.** The simulator has no Clock app to start one. Unit tests cover the cluster growing and the back
+  button following it; on the device, start a timer and watch **Edge markers** and the back button on **Trip screen**.
+- **Split View** on the inner display (the bar on the left app's left edge).
 
-   Do each one closed (portrait and landscape), open (portrait and landscape), partially folded, and in Split View.
-   The JSON is logged to the Metro terminal with the prefix `[granular-safe-areas probe]`.
-3. From the JSON, answer the four unknowns above:
-   - Does the occlusion region cover the whole status cluster?
-   - What is `statusBarFrame` when the status bar is vertical?
-   - What are the `barRegions` insets?
-   - Which classes and frames are in `viewsNearEdges` when native tabs or header items are visible?
+### First device session
 
-   Then replace the estimated values in `src/fixtures.ts`.
-4. On **Trip screen**, compare granular, bands and off with the regions overlay on.
-5. Reactivity, on **Edge markers** and **Native header items**, with the regions overlay on:
-   - Add and remove header items: the vertical bar grows and shrinks, and the markers should follow straight away.
-     That's KVO.
-   - Partially fold the device, and start a Live Activity (e.g. a timer). The overlay should update. That confirms the
-     `updateConstraints` reserved-region tracking; if it lags by up to a second, only the watchdog is catching it.
-   - Rotate, unfold, and use Split View.
+1. Build the example for the Duo (`pnpm example ios --device`).
+2. **Trip screen** and a trip's details, closed: the custom back buttons are replaced by the glass button below the
+   status cluster. Tap it. Open the device: in landscape the button moves below the shorter cluster on the inner
+   display; turn it to portrait and the custom buttons come back.
+3. **Trip screen in native tabs**: the button and the tab bar share the bar; switch tabs and it goes away.
+4. Start a timer (Live Activity) and check that the status region, the markers and the back button move down.
+5. If something is off, open **Probe**, tap **Collect diagnostics**, and send the JSON (logged to Metro with the prefix
+   `[granular-safe-areas probe]`, or shared from the button).
 
 ## Decisions (defaults chosen, change any)
 

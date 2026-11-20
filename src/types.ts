@@ -49,8 +49,9 @@ export type GranularSafeAreaMetrics = {
   /** `UIView.reservedRegions(kind: .division)`, including inactive regions. */
   divisions: ReservedRegionFrame[];
   /**
-   * Frames of the visible UIKit bars (tab bars, toolbars, navigation bars, vertical bar containers) in the provider's
-   * presentation: the view controller hierarchy it is shown in, not other sheets or modals.
+   * Frames of the visible UIKit bars in the provider's presentation (the view controller hierarchy it is shown in,
+   * not other sheets or modals): navigation bars, toolbars and tab bars, and each item group UIKit draws in a floating
+   * bar container, such as the back button, header items or the tab bar platter in the iPhone Duo's vertical bar.
    */
   systemBars: Rect[];
   /**
@@ -58,6 +59,11 @@ export type GranularSafeAreaMetrics = {
    * navigation controller with its navigation bar or toolbar showing.
    */
   barContainersVisible: boolean;
+  /**
+   * Whether the native side found the floating bar containers UIKit draws bar items in (iOS 26+). When it did,
+   * `systemBars` lists every item in the vertical bar, including none at all.
+   */
+  barItemsKnown: boolean;
   /** Whether the runtime and the SDK the app was built with support reserved regions (iOS 27.1+). */
   reservedRegionsSupported: boolean;
 };

@@ -12,22 +12,25 @@ the column are occupied and pushes in only the elements that overlap them. Backg
 ```
 iPhone Duo, closed (466 × 678 pt)
 ┌──────────────────────────┬────┐
-│ header       [Sign in] ←─┼ ●  │  camera, Dynamic Island, status bar: pushed in
+│ header       [Sign in] ←─┼ ●  │  0–174: camera, time and signal: pushed in
 │ card ........ [badge] ←──┼ 5G │
-│                          │    │  nothing here: content keeps the full width
-│ card ────────────────────┼──► │
+│                          │ (‹)│  174–222: back button, as UIKit places it
+│ card ────────────────────┼──► │  nothing here: content keeps the full width
 │ [next flight ...] [QR] ←─┼ ⌂  │  system tab bar: pushed in
 │             [Feedback] ←─┼ ☺  │
 └──────────────────────────┴────┘
 ```
 
+It also gives screens with custom headers the Duo's native back button: wrap your back button in
+[`VerticalBarBackButton`](#the-iphone-duo-back-button) and on the Duo it moves into the vertical bar, right below the
+status cluster, as a system glass button.
+
 It builds on [react-native-safe-area-context](https://github.com/appandflow/react-native-safe-area-context) and
 re-exports all of it, so one import covers every safe-area need.
 
-> **Status: early.** The JavaScript is unit-tested and runs on the web against recorded iPhone Duo metrics. The iOS
-> code is written against Apple's iOS 27.1 documentation and React Native's generated codegen, but has not been
-> compiled or run on a Duo yet. The recorded Duo metrics are estimates until probe output replaces them (see
-> [Diagnostics](#diagnostics)).
+> **Status: early.** Built and tested on the iPhone Duo simulator (Xcode 27.2, iOS 27.2) in every pose: closed in
+> portrait and landscape, open in both orientations, and half open. The recorded Duo metrics come from it. It has not
+> run on a physical Duo yet.
 
 ## Requirements
 
@@ -178,6 +181,43 @@ scrolling edges are ignored; handle those with the scroll view's content inset, 
 
 This follows Apple's guidance: full-width backgrounds and fixed UI, inset scrolling content.
 
+#### Following an element as it scrolls
+
+For a few elements you'll want more: a badge on a card should sit at the card's edge in the free stretch of the
+column, and move in only while it passes the status cluster or a bar. Make it `dynamic`:
+
+```tsx
+<ScrollView>
+  {trips.map((trip) => (
+    <Card key={trip.id}>
+      <GranularSafeAreaView dynamic scrollable="vertical" mode="offset" edges={['left', 'right']} style={styles.badge}>
+        <Text>Check-in open</Text>
+      </GranularSafeAreaView>
+    </Card>
+  ))}
+</ScrollView>
+```
+
+A dynamic view follows its own position and avoids only what it overlaps right now. With `scrollable` it ignores the
+regions on the scrolling edges, so it doesn't stick under the home indicator as it scrolls past.
+
+On iOS it does this natively, on the UI thread, with nothing running in JavaScript while it moves:
+
+- It observes the scroll views between itself and the provider, and applies its new position in the same frame as the
+  scroll.
+- It measures itself again after every React Native layout change, so it also follows content inserted above it, a
+  parent that resizes, and navigation.
+- `mode="offset"` is a transform the native view applies to itself, on top of any transform you give it.
+  `mode="padding"` changes layout, which only React Native can do, so the native side reports the insets and JS
+  applies them a frame or two later. Prefer `offset` for elements that move.
+
+Use it for the elements that need it, not whole lists: each dynamic view does one coordinate conversion per scroll
+frame. It doesn't follow native-driven animations of its ancestors (Animated with `useNativeDriver`, Reanimated) other
+than scrolling. On the web it measures again on every frame something scrolls. On Android, where the regions are
+still plain bands, it behaves like a regular `GranularSafeAreaView`.
+
+`dynamic` is a `GranularSafeAreaView` prop. Set it when the view mounts: changing it remounts the view.
+
 ### Options
 
 All of these work on `GranularSafeAreaView`, `useGranularSafeArea` and `useGranularSafeAreaInsets` (`mode` only on the
@@ -190,6 +230,7 @@ first two).
 | `spacing` | `0` | Extra clearance around each region, in points |
 | `avoid` | everything except `'fold'` | Region kinds to avoid: `inset`, `status`, `camera`, `systemBar`, `fold`. `[]` avoids nothing |
 | `scrollable` | – | `'vertical'` or `'horizontal'`; see [Scrolling content](#scrolling-content) |
+| `dynamic` | `false` | `GranularSafeAreaView` only. Follow the view as it scrolls or moves; see [Following an element as it scrolls](#following-an-element-as-it-scrolls) |
 
 Folds aren't avoided by default: a full-width header that spans a book fold shouldn't be squeezed onto one half. Add
 `'fold'` to `avoid` for small controls you want off the hinge.
@@ -214,6 +255,58 @@ UIKit bars count as regions wherever they are, not just in the Duo column, so an
 bar is pushed below it, and moves as the bar grows or shrinks. Don't wrap components that render *inside* a native header
 (custom `headerRight` content): they overlap the bar on purpose.
 
+### The iPhone Duo back button
+
+On the Duo, UIKit puts a navigation controller's back button at the top of the vertical bar, right below the status
+cluster. Screens with a custom header (`headerShown: false`, JavaScript navigation, a floating button over a hero image)
+don't get it. Wrap your own back button in `VerticalBarBackButton`:
+
+```tsx
+import { VerticalBarBackButton } from 'react-native-granular-safe-areas';
+
+<VerticalBarBackButton onPress={() => navigation.goBack()}>
+  <MyBackButton onPress={() => navigation.goBack()} />
+</VerticalBarBackButton>
+```
+
+Wherever the system shows a vertical bar (the Duo closed, or open in landscape), your button is hidden, and the
+provider draws a glass back button in the bar, in the place and at the size UIKit uses for its own (`48 × 48`, centered
+on the camera). Everywhere else, including a regular iPhone and the Duo open in portrait, your button stays as it is.
+
+- **Follows the status cluster.** The button sits right below it in every pose, and moves when the cluster grows (a
+  Live Activity).
+- **Other elements avoid it.** It's added as a `systemBar` region, so granular views next to it move in.
+- **One button, for the visible screen.** Every screen can offer one; the most recent screen that is showing wins.
+  Screens below the top of a stack and unselected tabs drop out on their own, because UIKit takes their views out of
+  the window, which the button checks natively. No navigation library is needed.
+- **Gives way to UIKit.** If a native header already shows its back button in the bar, the library doesn't draw a
+  second one, and your own button stays where it is. It's meant for screens without a native header.
+
+| Prop | Default | |
+| --- | --- | --- |
+| `onPress` | | Called when the bar's button is pressed |
+| `enabled` | `true` | Turn the bar's button off, e.g. while the screen can't go back |
+| `icon` | `'back'` | `'back'` (chevron) or `'close'` (cross, for modals) |
+| `accessibilityLabel` | `'Back'` / `'Close'` | |
+| `children` | | Your own back button, shown where there is no vertical bar |
+
+When hiding the children isn't enough (a header title that should move left, say), use the hook. It returns
+`inVerticalBar`, and an `anchor` element to render anywhere in the screen:
+
+```tsx
+const back = useVerticalBarBackButton({ onPress: navigation.goBack });
+return (
+  <Header>
+    {back.anchor}
+    {back.inVerticalBar ? null : <MyBackButton />}
+    <Title style={{ marginLeft: back.inVerticalBar ? 16 : 0 }} />
+  </Header>
+);
+```
+
+`useVerticalBar()` returns the bar itself, for laying out items of your own: its `edge`, the `column`, where items
+start (`top`) and end (`bottom`), their horizontal center (`centerX`), and the bar items UIKit shows (`items`).
+
 ### Modals and sheets
 
 Each provider measures in its own coordinate space. Put another `GranularSafeAreaProvider` inside every modal or sheet,
@@ -228,12 +321,27 @@ regions:
 
 1. Every non-zero inset starts as a full-length band.
 2. The band on the vertical bar edge is replaced by a `status` region (from the top down to wherever the status
-   cluster ends) and a `systemBar` region for each UIKit bar in it.
+   cluster ends) and a `systemBar` region for each bar item in it.
 3. Active cameras outside the bands become `camera` regions, other UIKit bars become `systemBar` regions, and an
    active fold becomes a `fold` region.
 
-Step 2 happens only when the native side reports where the status cluster ends. Otherwise the band stays whole, so a
-device or configuration the library doesn't understand behaves exactly like a regular safe area, never worse.
+Step 2 happens only when the native side reports where the status cluster ends, and knows every item in the bar.
+Otherwise the band stays whole, so a device or configuration the library doesn't understand behaves exactly like a
+regular safe area, never worse.
+
+What the Duo simulator showed, and the library relies on:
+
+- **The status cluster** is an occlusion region covering the whole cluster (camera, time and signal: 0–174 pt
+  closed in portrait, 0–124 pt open in landscape), and the bar layout region starts right below it. The status bar's
+  own frame is a 2 pt placeholder when the bar is vertical, so it's ignored.
+- **Bar items** are drawn in a floating bar container (`_UIFloatingBarContainerView`, since iOS 26) that covers the
+  whole navigation or tab bar controller. Each item group is a glass capsule inside it: the back button, header items,
+  the tab bar platter. The library reports each capsule's frame. When a container is found, an empty bar really is
+  empty, so the column is split even on a native stack's root screen.
+- **Tab bar controllers** keep an empty, full-height `UITabBar` in the column while the tabs are drawn in the platter;
+  the library ignores it.
+- **Bar items are centered on the camera** (x 418), not on the column (x 424), which is where the vertical bar back
+  button goes too.
 
 The regions live in a small store outside React state. An automatic element measures itself with
 `getBoundingClientRect()` in a layout effect and computes how far each edge must move in to clear the regions it
@@ -258,8 +366,8 @@ import {
 
 - `GranularSafeAreaDebugOverlay` draws the regions over the app.
 - `mock` replaces the platform's metrics with recorded ones, so you can lay out for the Duo on any device or in a
-  browser. `fixtures` has the Duo closed (with and without a vertical tab bar), open, folded like a book, and a regular
-  iPhone.
+  browser. `fixtures` has the Duo closed in portrait (plain, with native tabs, with a native header) and landscape, open
+  in landscape and portrait, folded like a book, and a regular iPhone. The Duo ones are recorded on the simulator.
 
 ### Diagnostics
 
@@ -273,12 +381,13 @@ example app's **Probe** screen collects it, logs it to the Metro terminal, and c
 ```sh
 pnpm install
 pnpm example web     # iPhone Duo simulation in the browser
-pnpm example ios     # Xcode 27.1; pick the iPhone Duo simulator in Device Hub
+pnpm example ios     # Xcode 27.1 or newer; pick the iPhone Duo simulator in Device Hub
 ```
 
 The example has:
-- a trip screen modelled on a real app that broke on the Duo, using all three APIs
-- the same screen inside native tabs
+- a trip screen modelled on a real app that broke on the Duo, using all three APIs and the vertical bar back button
+- a trip details screen with a floating back button over a hero picture, which becomes the Duo's back button
+- the same trip screen inside native tabs
 - edge markers, a marker every 40 pt down the right edge that shows which ones move as the system UI changes
 - native header items you can add and remove, to watch the vertical bar grow and shrink
 - a sheet, and the probe

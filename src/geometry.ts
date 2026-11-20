@@ -103,17 +103,25 @@ function attachedEdge(
     touching.push(['bottom', frame.height]);
   if (frame.x <= insets.left + tolerance) touching.push(['left', frame.width]);
   // Spanning a whole axis (a full-width navigation bar) says nothing about which of its two edges to move away from.
-  const spans = (a: Edge, b: Edge) =>
-    touching.some(([e]) => e === a) && touching.some(([e]) => e === b);
+  const has = (edge: Edge) => touching.some(([e]) => e === edge);
+  const spansX = has('left') && has('right');
+  const spansY = has('top') && has('bottom');
   const candidates = touching.filter(
     ([edge]) =>
       !(
-        ((edge === 'left' || edge === 'right') && spans('left', 'right')) ||
-        ((edge === 'top' || edge === 'bottom') && spans('top', 'bottom'))
+        ((edge === 'left' || edge === 'right') && spansX) ||
+        ((edge === 'top' || edge === 'bottom') && spansY)
       )
   );
   candidates.sort((a, b) => a[1] - b[1]);
-  return candidates[0]?.[0] ?? null;
+  if (candidates[0]) return candidates[0][0];
+  // A full-width bar that doesn't touch the top or bottom still belongs to the nearer one. On the iPhone Duo the
+  // navigation bar starts 24 pt down although the top inset is 0, and it's still a top bar.
+  if (spansX && !spansY)
+    return frame.y + frame.height / 2 <= height / 2 ? 'top' : 'bottom';
+  if (spansY && !spansX)
+    return frame.x + frame.width / 2 <= width / 2 ? 'left' : 'right';
+  return null;
 }
 
 /**
@@ -160,13 +168,13 @@ export function buildRegions(
       : null;
 
   const regions: SafeAreaRegion[] = [];
-  const columnBars = new Set<Rect>();
+  const inColumn = new Set<Rect>();
   for (const edge of EDGES) {
     const size = insets[edge];
     if (size <= 0) continue;
     const band = bandRect(edge, size, width, height);
     const refined = edge === barEdge ? refineBand(edge, band, metrics) : null;
-    if (refined) refined.bars.forEach((bar) => columnBars.add(bar));
+    if (refined) refined.bars.forEach((bar) => inColumn.add(bar));
     regions.push(
       ...(refined?.regions ?? [{ kind: 'inset', edge, frame: band }])
     );
@@ -191,7 +199,7 @@ export function buildRegions(
   // Bars outside a refined column, such as a navigation bar over a screen with a transparent header, are regions of
   // their own. They follow the bar as it grows and shrinks.
   for (const bar of metrics.systemBars) {
-    if (columnBars.has(bar)) continue;
+    if (inColumn.has(bar)) continue;
     const frame = intersection(bar, bounds);
     if (!frame || covered(frame)) continue;
     regions.push({
@@ -225,38 +233,35 @@ function refineBand(
   band: Rect,
   metrics: GranularSafeAreaMetrics
 ): { regions: SafeAreaRegion[]; bars: Rect[] } | null {
-  const inBand = (r: Rect) => overlaps(r, band);
+  const clusterBottom = statusClusterBottom(band, metrics);
+  if (clusterBottom === null) return null;
 
-  const statusBottoms: number[] = [];
-  if (metrics.statusBar && inBand(metrics.statusBar))
-    statusBottoms.push(maxY(metrics.statusBar));
-  const barTop = metrics.barRegionInsets?.top;
-  if (barTop !== undefined && barTop > 0) statusBottoms.push(barTop);
-  if (statusBottoms.length === 0) return null;
+  const verticalBars = columnBars(band, metrics);
+  // Without the floating bar containers, a visible bar container with no bar found in the column means the system
+  // put something there the native side didn't recognize.
+  if (
+    metrics.barContainersVisible &&
+    !metrics.barItemsKnown &&
+    verticalBars.length === 0
+  ) {
+    return null;
+  }
 
-  // A camera can reach below the status bar, e.g. a Dynamic Island showing a Live Activity.
-  const cameraBottoms = metrics.occlusions
-    .filter((o) => o.active && inBand(o))
-    .map(maxY);
-  const clusterBottom = Math.min(
-    Math.max(...statusBottoms, ...cameraBottoms),
-    band.height
-  );
-
-  // Only tall bars centered in the column are vertical bars. Horizontal bars that merely cross it are not.
-  const verticalBars = metrics.systemBars.filter((bar) => {
-    const centerX = bar.x + bar.width / 2;
-    return bar.height > bar.width && centerX >= band.x && centerX <= maxX(band);
-  });
-  if (metrics.barContainersVisible && verticalBars.length === 0) return null;
-
-  const regions: SafeAreaRegion[] = [
-    {
-      kind: 'status',
-      edge,
-      frame: { x: band.x, y: band.y, width: band.width, height: clusterBottom },
-    },
-  ];
+  const regions: SafeAreaRegion[] =
+    clusterBottom > 0
+      ? [
+          {
+            kind: 'status',
+            edge,
+            frame: {
+              x: band.x,
+              y: band.y,
+              width: band.width,
+              height: clusterBottom,
+            },
+          },
+        ]
+      : [];
   for (const bar of verticalBars) {
     const clipped = intersection(bar, band);
     if (!clipped) continue;
@@ -272,6 +277,122 @@ function refineBand(
     });
   }
   return { regions, bars: verticalBars };
+}
+
+/**
+ * Where the status cluster at the top of the vertical bar band ends, or `null` when nothing that knows about the
+ * status bar says so. A camera region alone can stop above the time and signal icons, so it only ever extends the
+ * cluster, e.g. a Dynamic Island grown by a Live Activity.
+ */
+function statusClusterBottom(
+  band: Rect,
+  metrics: GranularSafeAreaMetrics
+): number | null {
+  const statusBottoms: number[] = [];
+  const { statusBar } = metrics;
+  // A vertical status bar reports a placeholder frame (466 x 2 pt at the top on the Duo), which says nothing.
+  if (
+    statusBar &&
+    statusBar.width >= 10 &&
+    statusBar.height >= 10 &&
+    overlaps(statusBar, band)
+  ) {
+    statusBottoms.push(maxY(statusBar));
+  }
+  // 0 is a real answer: a view below the status cluster, such as a sheet, has nothing above its bar items.
+  const barTop = metrics.barRegionInsets?.top;
+  if (barTop !== undefined && barTop >= 0) statusBottoms.push(barTop);
+  if (statusBottoms.length === 0) return null;
+
+  const cameraBottoms = metrics.occlusions
+    .filter((o) => o.active && overlaps(o, band))
+    .map(maxY);
+  return Math.min(Math.max(...statusBottoms, ...cameraBottoms), band.height);
+}
+
+/** The bars and bar items in the column: centered in the band and no wider than it. Bars that cross it are not. */
+function columnBars(band: Rect, metrics: GranularSafeAreaMetrics): Rect[] {
+  return metrics.systemBars.filter((bar) => {
+    const centerX = bar.x + bar.width / 2;
+    return (
+      bar.width <= band.width + 1 && centerX >= band.x && centerX <= maxX(band)
+    );
+  });
+}
+
+/** The system's vertical bar: the column on one side that holds the status cluster and the bar items. */
+export type VerticalBar = {
+  /** The physical edge the bar is on. */
+  edge: 'left' | 'right';
+  /** The whole column, the inset band on that edge, in the provider's coordinates. */
+  column: Rect;
+  /** Where bar items start: right below the status cluster. */
+  top: number;
+  /** Where bar items end: above the bottom inset. */
+  bottom: number;
+  /** The horizontal center of the bar items. On the Duo it lines up with the camera, not with the column. */
+  centerX: number;
+  /** The bar items UIKit currently shows in the column (back button, header items, tab bar), top to bottom. */
+  items: Rect[];
+};
+
+/**
+ * The vertical bar, if the platform has one where this provider is: the iPhone Duo closed, or open in landscape.
+ * `null` everywhere else, and when the native side can't say where the status cluster ends.
+ */
+export function getVerticalBar(
+  metrics: GranularSafeAreaMetrics
+): VerticalBar | null {
+  if (!metrics.reservedRegionsSupported) return null;
+  const edge = resolveVerticalBarEdge(metrics);
+  if (!edge) return null;
+  const { width, height, insets } = metrics;
+  const column = bandRect(edge, insets[edge], width, height);
+  const top = statusClusterBottom(column, metrics);
+  if (top === null) return null;
+
+  // The bar layout region is where UIKit lays out bar items. It's narrower than the column and centered on the camera.
+  let centerX = column.x + column.width / 2;
+  const region = metrics.barRegionInsets;
+  if (region) {
+    const start = region.left;
+    const end = width - region.right;
+    const center = (start + end) / 2;
+    if (end > start && center >= column.x && center <= maxX(column)) {
+      centerX = center;
+    }
+  }
+  const items = columnBars(column, metrics)
+    .map(rectOf)
+    .sort((a, b) => a.y - b.y);
+  return {
+    edge,
+    column,
+    top,
+    bottom: height - Math.max(insets.bottom, region?.bottom ?? 0),
+    centerX,
+    items,
+  };
+}
+
+/** The size of a vertical bar button: the glass circle UIKit draws for the back button and bar items. */
+export const VERTICAL_BAR_ITEM_SIZE = 48;
+
+/**
+ * Where a back button goes in the vertical bar: the top slot, right below the status cluster, where UIKit puts the
+ * back button of a navigation controller. `null` without a vertical bar, or when a UIKit bar item already sits there
+ * (a native header shows its own back button).
+ */
+export function verticalBarBackButtonFrame(bar: VerticalBar): Rect | null {
+  const size = VERTICAL_BAR_ITEM_SIZE;
+  if (bar.bottom - bar.top < size) return null;
+  const frame = {
+    x: bar.centerX - size / 2,
+    y: bar.top,
+    width: size,
+    height: size,
+  };
+  return bar.items.some((item) => overlaps(item, frame)) ? null : frame;
 }
 
 function rectOf(r: Rect): Rect {
@@ -353,6 +474,7 @@ export function metricsFromInsets(
     divisions: [],
     systemBars: [],
     barContainersVisible: false,
+    barItemsKnown: false,
     reservedRegionsSupported: false,
   };
 }
@@ -368,17 +490,79 @@ export function sweepRegions(
   width: number,
   height: number
 ): SafeAreaRegion[] {
+  return withoutScrollingEdges(regions, axis).map((r) => ({
+    ...r,
+    frame:
+      axis === 'vertical'
+        ? { x: r.frame.x, y: 0, width: r.frame.width, height }
+        : { x: 0, y: r.frame.y, width, height: r.frame.height },
+  }));
+}
+
+/** Regions on the edges content scrolls towards are the scroll view's content inset's job, not the element's. */
+export function withoutScrollingEdges(
+  regions: readonly SafeAreaRegion[],
+  axis: 'vertical' | 'horizontal'
+): SafeAreaRegion[] {
   const scrollingEdges: readonly Edge[] =
     axis === 'vertical' ? ['top', 'bottom'] : ['left', 'right'];
-  return regions
-    .filter((r) => !(r.edge && scrollingEdges.includes(r.edge)))
-    .map((r) => ({
-      ...r,
-      frame:
-        axis === 'vertical'
-          ? { x: r.frame.x, y: 0, width: r.frame.width, height }
-          : { x: 0, y: r.frame.y, width, height: r.frame.height },
+  return regions.filter((r) => !(r.edge && scrollingEdges.includes(r.edge)));
+}
+
+/**
+ * Puts scrolling content where it is on screen along the scroll axis, to measure it against {@link sweepRegions}.
+ * Those span the whole axis, so only the cross axis matters, and content measured while it was scrolled out of view
+ * (further down a list) gets the same insets as when it is visible.
+ */
+export function sweepElement(
+  rect: Rect,
+  axis: 'vertical' | 'horizontal',
+  bounds: { width: number; height: number }
+): Rect {
+  return axis === 'vertical'
+    ? { x: rect.x, y: 0, width: rect.width, height: bounds.height }
+    : { x: 0, y: rect.y, width: bounds.width, height: rect.height };
+}
+
+/** A region as a dynamic view's native side takes it. `edge`: 0 floating, then 1 top, 2 right, 3 bottom, 4 left. */
+export type TrackedRegion = Rect & { edge: number };
+
+const EDGE_CODES: Record<Edge, number> = {
+  top: 1,
+  right: 2,
+  bottom: 3,
+  left: 4,
+};
+
+/**
+ * The regions a dynamic element avoids, for the native side to test against the element's live position: only the
+ * kinds in `avoid`, grown by `spacing`, and for scrolling content, without the regions on the scrolling edges.
+ */
+export function trackedRegions(
+  regions: readonly SafeAreaRegion[],
+  {
+    avoid = DEFAULT_AVOID,
+    spacing = 0,
+    scrollable,
+  }: {
+    avoid?: readonly SafeAreaRegionKind[];
+    spacing?: number;
+    scrollable?: 'vertical' | 'horizontal';
+  }
+): TrackedRegion[] {
+  return (scrollable ? withoutScrollingEdges(regions, scrollable) : regions)
+    .filter((region) => avoid.includes(region.kind))
+    .map((region) => ({
+      ...(spacing > 0 ? expand(region.frame, spacing) : rectOf(region.frame)),
+      edge: region.edge ? EDGE_CODES[region.edge] : 0,
     }));
+}
+
+/** Edges as bits, for the native side: 1 top, 2 right, 4 bottom, 8 left. */
+export function edgeMask(edges: readonly Edge[]): number {
+  let mask = 0;
+  for (const edge of new Set(edges)) mask += 2 ** (EDGE_CODES[edge] - 1);
+  return mask;
 }
 
 export type ElementInsetsOptions = {
@@ -438,22 +622,28 @@ export function computeElementInsets(
 }
 
 /**
- * True when an element measured after a padding change grew on `axis` by exactly that change. Such an element is
- * sized by its content: padding can't move its content, and recomputing from the grown box would only grow it more.
+ * True when, after a padding change on `edge`, that edge of the element moved outwards by exactly the change. Such an
+ * element is sized by its content and grows towards the region it is avoiding: padding can't move its content, and
+ * recomputing from the grown box would only grow it more.
+ *
+ * An element that grows the other way is fine, such as a content-sized bar pinned to the bottom getting bottom
+ * padding: its top moves up, its bottom stays, and the padding moves its content.
  */
-export function grewByOwnPadding(
+export function followsOwnPadding(
   previous: { rect: Rect; applied: EdgeInsets },
   rect: Rect,
   applied: EdgeInsets,
-  axis: 'horizontal' | 'vertical'
+  edge: Edge
 ): boolean {
-  const padding = (i: EdgeInsets) =>
-    axis === 'horizontal' ? i.left + i.right : i.top + i.bottom;
-  const size = (r: Rect) => (axis === 'horizontal' ? r.width : r.height);
-  const change = padding(applied) - padding(previous.applied);
-  return (
-    change !== 0 && Math.abs(size(rect) - size(previous.rect) - change) < 0.5
-  );
+  const change = applied[edge] - previous.applied[edge];
+  if (change === 0) return false;
+  const moved = {
+    top: previous.rect.y - rect.y,
+    left: previous.rect.x - rect.x,
+    bottom: maxY(rect) - maxY(previous.rect),
+    right: maxX(rect) - maxX(previous.rect),
+  }[edge];
+  return Math.abs(moved - change) < 0.5;
 }
 
 /** Removes an `offset`-mode translation from a measured rectangle, so applying a result never feeds back into it. */

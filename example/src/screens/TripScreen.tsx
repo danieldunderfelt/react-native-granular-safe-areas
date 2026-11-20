@@ -1,46 +1,27 @@
 import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import {
   GranularSafeAreaView,
   useGranularSafeArea,
   useGranularSafeAreaInsets,
   useSafeAreaInsets,
+  VerticalBarBackButton,
 } from 'react-native-granular-safe-areas';
+import type { RootStackParamList } from '../navigation';
 import { useAvoid } from '../settings';
+import { TRIPS } from '../trips';
 
 const HEADER_HEIGHT = 60;
 
-const TRIPS = [
-  {
-    when: 'Tomorrow',
-    route: 'Helsinki – Lisbon',
-    detail: 'Direct · Wed 18 Nov · 16:40',
-    color: '#2f6f8f',
-    code: 'LIS',
-  },
-  {
-    when: 'December',
-    route: 'Lisbon – Funchal',
-    detail: 'Direct · Fri 4 Dec · 09:15',
-    color: '#8f5a2f',
-    code: 'FNC',
-  },
-  {
-    when: 'January',
-    route: 'Funchal – Helsinki',
-    detail: '1 stop · Sun 10 Jan · 12:05',
-    color: '#4b2f8f',
-    code: 'HEL',
-  },
-];
-
 /**
  * A layout like the one in the README's screenshot: a custom header, a scrolling list of cards with a badge, and
- * floating controls. It shows each API: manual insets for the header, the automatic hook for the feedback button, and
- * `GranularSafeAreaView` for the rest.
+ * floating controls. It shows each API: manual insets for the header, the automatic hook for the feedback button,
+ * `GranularSafeAreaView` for the rest, and `VerticalBarBackButton` for the header's back button.
  */
 export function TripScreen() {
-  const navigation = useNavigation();
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const avoid = useAvoid();
   const { top } = useSafeAreaInsets();
 
@@ -69,28 +50,46 @@ export function TripScreen() {
       >
         {TRIPS.map((trip) => (
           <View key={trip.code}>
-            <Text style={styles.when}>{trip.when}</Text>
-            {/* The card's picture runs under the column; only the badge has to stay readable. */}
-            <View style={styles.card}>
+            {/* Scrolling text passes under every region in the column, so it avoids the whole column. */}
+            <GranularSafeAreaView
+              scrollable="vertical"
+              edges={['left', 'right']}
+              avoid={avoid}
+            >
+              <Text style={styles.when}>{trip.when}</Text>
+            </GranularSafeAreaView>
+            {/* The card's picture runs under the column; only its text and badge have to stay readable. */}
+            <Pressable
+              style={styles.card}
+              onPress={() =>
+                navigation.navigate('TripDetails', { code: trip.code })
+              }
+            >
               <View style={[styles.picture, { backgroundColor: trip.color }]}>
                 <Text style={styles.pictureCode}>{trip.code}</Text>
               </View>
-              {/* Scrolling content passes under every region in the column, so it avoids the whole column. */}
+              {/* Dynamic: it follows the badge as it scrolls, so it moves in only while it passes a region. */}
               <GranularSafeAreaView
+                dynamic
                 mode="offset"
                 scrollable="vertical"
-                edges={['right']}
+                edges={['left', 'right']}
                 spacing={4}
                 avoid={avoid}
                 style={styles.badge}
               >
                 <Text style={styles.badgeText}>Check-in open</Text>
               </GranularSafeAreaView>
-              <View style={styles.cardBody}>
+              <GranularSafeAreaView
+                scrollable="vertical"
+                edges={['left', 'right']}
+                avoid={avoid}
+                style={styles.cardBody}
+              >
                 <Text style={styles.route}>{trip.route}</Text>
                 <Text style={styles.detail}>{trip.detail}</Text>
-              </View>
-            </View>
+              </GranularSafeAreaView>
+            </Pressable>
           </View>
         ))}
       </ScrollView>
@@ -108,9 +107,12 @@ export function TripScreen() {
         ]}
       >
         {navigation.canGoBack() ? (
-          <Pressable onPress={() => navigation.goBack()} hitSlop={12}>
-            <Text style={styles.back}>‹</Text>
-          </Pressable>
+          // On the iPhone Duo this button moves into the vertical bar, below the status cluster.
+          <VerticalBarBackButton onPress={() => navigation.goBack()}>
+            <Pressable onPress={() => navigation.goBack()} hitSlop={12}>
+              <Text style={styles.back}>‹</Text>
+            </Pressable>
+          </VerticalBarBackButton>
         ) : null}
         <Text style={styles.headerTitle} numberOfLines={1}>
           Please sign in again

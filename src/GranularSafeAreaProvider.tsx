@@ -6,6 +6,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from 'react';
 import {
@@ -28,6 +29,7 @@ import {
 } from './geometry';
 import { parseMetrics } from './metrics';
 import {
+  BarButtonView,
   getInitialWindowMetricsJSON,
   NativeProviderView,
   refreshNativeProvider,
@@ -170,11 +172,42 @@ export function GranularSafeAreaProvider({
         onMetricsChange={handleMetricsChange}
       >
         {children}
+        <VerticalBarBackButtonHost store={store} />
       </NativeProviderView>
     </GranularSafeAreaContext.Provider>
   );
 }
 
+/** Draws the back button a screen put in the vertical bar with `VerticalBarBackButton`, over everything else. */
+function VerticalBarBackButtonHost({
+  store,
+}: {
+  store: GranularSafeAreaStore;
+}) {
+  const button = useSyncExternalStore(
+    store.subscribe,
+    () => store.getSnapshot().backButton
+  );
+  if (!button) return null;
+  return (
+    <BarButtonView
+      systemImage={button.icon === 'close' ? 'xmark' : 'chevron.backward'}
+      label={button.accessibilityLabel}
+      onBarButtonPress={store.pressBackButton}
+      style={[
+        styles.barButton,
+        {
+          left: button.frame.x,
+          top: button.frame.y,
+          width: button.frame.width,
+          height: button.frame.height,
+        },
+      ]}
+    />
+  );
+}
+
 const styles = StyleSheet.create({
   fill: { flex: 1 },
+  barButton: { position: 'absolute' },
 });

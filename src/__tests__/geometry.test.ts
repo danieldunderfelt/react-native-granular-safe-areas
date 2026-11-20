@@ -2,14 +2,20 @@ import { fixtures } from '../fixtures';
 import {
   buildRegions,
   computeElementInsets,
-  grewByOwnPadding,
+  edgeMask,
+  getVerticalBar,
+  followsOwnPadding,
   metricsForSubrect,
   placementToRect,
   regionsEqual,
   metricsFromInsets,
   removeOffset,
   resolveVerticalBarEdge,
+  sweepElement,
   sweepRegions,
+  trackedRegions,
+  verticalBarBackButtonFrame,
+  withoutScrollingEdges,
 } from '../geometry';
 import { parseMetrics } from '../metrics';
 import type { GranularSafeAreaMetrics, Rect, SafeAreaRegion } from '../types';
@@ -30,12 +36,12 @@ describe('buildRegions', () => {
       {
         kind: 'status',
         edge: 'right',
-        frame: { x: 382, y: 0, width: 84, height: 208 },
+        frame: { x: 382, y: 0, width: 84, height: 174 },
       },
       {
         kind: 'systemBar',
         edge: 'right',
-        frame: { x: 382, y: 440, width: 84, height: 214 },
+        frame: { x: 382, y: 492, width: 84, height: 162 },
       },
       {
         kind: 'inset',
@@ -95,12 +101,40 @@ describe('buildRegions', () => {
   });
 
   it('keeps the band whole when bar containers are visible but no vertical bar was recognized', () => {
-    const regions = buildRegions({ ...duoTabs, systemBars: [] });
+    const regions = buildRegions({
+      ...duoTabs,
+      systemBars: [],
+      barItemsKnown: false,
+    });
     expect(regions[0]).toMatchObject({ kind: 'inset', edge: 'right' });
   });
 
+  it('trusts an empty vertical bar when the floating bar containers were found', () => {
+    // A native stack's root screen: the navigation bar is visible, but nothing is in the vertical bar.
+    const regions = buildRegions({
+      ...duoTabs,
+      systemBars: [{ x: 0, y: 24, width: 466, height: 58 }],
+    });
+    expect(regions.map((r) => r.kind)).toEqual([
+      'status',
+      'inset',
+      'systemBar',
+    ]);
+  });
+
+  it('splits the column around the back button UIKit puts below the status cluster', () => {
+    const regions = buildRegions(
+      fixtures.iPhoneDuoOuterPortraitWithNativeHeader
+    );
+    expect(regions).toContainEqual({
+      kind: 'systemBar',
+      edge: 'right',
+      frame: { x: 382, y: 174, width: 84, height: 48 },
+    });
+  });
+
   it('keeps horizontal bars that cross the column out of the column, as regions of their own', () => {
-    const toolbar = { x: 0, y: 300, width: 466, height: 50 };
+    const toolbar = { x: 0, y: 594, width: 466, height: 50 };
     const regions = buildRegions({
       ...duoTabs,
       systemBars: [...duoTabs.systemBars, toolbar],
@@ -110,15 +144,62 @@ describe('buildRegions', () => {
     ).toHaveLength(1);
     expect(regions).toContainEqual({
       kind: 'systemBar',
-      edge: null,
+      edge: 'bottom',
       frame: toolbar,
     });
   });
 
-  it('keeps the band whole when the only bars found are horizontal', () => {
+  it('attaches a full-width bar to the nearer edge even when it does not touch it', () => {
+    // The Duo's navigation bar starts 24 pt down, with a top inset of 0.
+    const regions = buildRegions(
+      fixtures.iPhoneDuoOuterPortraitWithNativeHeader
+    );
+    expect(regions).toContainEqual({
+      kind: 'systemBar',
+      edge: 'top',
+      frame: { x: 0, y: 24, width: 466, height: 58 },
+    });
+  });
+
+  it('keeps the band whole when the only bars found are horizontal and the bar items are unknown', () => {
     const regions = buildRegions({
       ...duoTabs,
       systemBars: [{ x: 0, y: 0, width: 466, height: 50 }],
+      barItemsKnown: false,
+    });
+    expect(regions[0]).toMatchObject({ kind: 'inset', edge: 'right' });
+  });
+
+  it('frees the column in a sheet that starts below the status cluster', () => {
+    // Recorded: a form sheet on the outer display. UIKit's bar region starts at the top of the sheet.
+    const sheet: GranularSafeAreaMetrics = {
+      width: 450,
+      height: 341.6666564941406,
+      insets: { top: 0, right: 76, bottom: 33.999989827473996, left: 0 },
+      verticalBarEdge: 'trailing',
+      layoutDirection: 'ltr',
+      statusBar: { x: -8, y: -328.33333333333326, width: 466, height: 2 },
+      barRegionInsets: {
+        top: 0,
+        right: 10,
+        bottom: 33.999989827473996,
+        left: 364,
+      },
+      occlusions: [],
+      divisions: [],
+      systemBars: [{ x: 0, y: -58, width: 450, height: 58 }],
+      barContainersVisible: true,
+      barItemsKnown: true,
+      reservedRegionsSupported: true,
+    };
+    expect(buildRegions(sheet).map((r) => r.kind)).toEqual(['inset']);
+    expect(getVerticalBar(sheet)?.top).toBe(0);
+  });
+
+  it('ignores the placeholder frame UIKit reports for a vertical status bar', () => {
+    const regions = buildRegions({
+      ...duo,
+      barRegionInsets: null,
     });
     expect(regions[0]).toMatchObject({ kind: 'inset', edge: 'right' });
   });
@@ -228,7 +309,7 @@ describe('computeElementInsets on the Duo outer display (screenshot cases)', () 
   });
 
   it('pushes the "Check-in" badge in by exactly its overlap', () => {
-    const badge = { x: 316, y: 185, width: 122, height: 24 };
+    const badge = { x: 316, y: 150, width: 122, height: 24 };
     expect(insetsFor(badge, regions).right).toBe(438 - 382);
   });
 
@@ -258,7 +339,7 @@ describe('computeElementInsets on the Duo outer display (screenshot cases)', () 
   });
 
   it('adds spacing around regions', () => {
-    const card = { x: 16, y: 212, width: 400, height: 50 };
+    const card = { x: 16, y: 178, width: 400, height: 50 };
     expect(insetsFor(card, regions).right).toBe(0);
     expect(insetsFor(card, regions, { spacing: 8 }).right).toBe(416 - 374);
   });
@@ -312,6 +393,69 @@ describe('sweepRegions', () => {
     const swept = sweepRegions(buildRegions(duoTabs), 'vertical', 466, 678);
     expect(swept.some((r) => r.edge === 'bottom')).toBe(false);
   });
+
+  it('pushes in content measured while it was scrolled out of view', () => {
+    const swept = sweepRegions(buildRegions(duo), 'vertical', 466, 678);
+    // The "Check-in" badge of a card further down the list, below the screen when the list mounted.
+    const badge = { x: 316, y: 900, width: 122, height: 24 };
+    expect(insetsFor(badge, swept).right).toBe(0);
+    expect(insetsFor(sweepElement(badge, 'vertical', bounds), swept)).toEqual({
+      top: 0,
+      right: 438 - 382,
+      bottom: 0,
+      left: 0,
+    });
+  });
+});
+
+describe('dynamic elements', () => {
+  const regions = buildRegions(duoTabs);
+  const scrolling = withoutScrollingEdges(regions, 'vertical');
+  const badgeAt = (y: number) => ({ x: 316, y, width: 122, height: 24 });
+
+  it('pushes a scrolling badge in only while it passes a region', () => {
+    expect(insetsFor(badgeAt(150), scrolling).right).toBe(438 - 382);
+    expect(insetsFor(badgeAt(300), scrolling).right).toBe(0);
+    expect(insetsFor(badgeAt(500), scrolling).right).toBe(438 - 382);
+    // Below the screen: nothing until it scrolls in.
+    expect(insetsFor(badgeAt(900), scrolling).right).toBe(0);
+  });
+
+  it('does not stick to the bottom inset as it scrolls past it', () => {
+    expect(insetsFor(badgeAt(650), scrolling).bottom).toBe(0);
+  });
+
+  it('hands the native side the regions to avoid, already filtered and grown', () => {
+    expect(
+      trackedRegions(regions, {
+        avoid: ['status', 'systemBar'],
+        spacing: 4,
+        scrollable: 'vertical',
+      })
+    ).toEqual([
+      { x: 378, y: -4, width: 92, height: 182, edge: 2 },
+      { x: 378, y: 488, width: 92, height: 170, edge: 2 },
+    ]);
+  });
+
+  it('keeps every kind it avoids, and the scrolling edges when not scrolling', () => {
+    expect(trackedRegions(regions, {}).map((r) => r.edge)).toEqual([2, 2, 3]);
+    expect(trackedRegions(regions, { avoid: [] })).toEqual([]);
+  });
+
+  it('marks floating regions with edge 0', () => {
+    const fold = buildRegions(fixtures.iPhoneDuoInnerBookFold);
+    expect(
+      trackedRegions(fold, { avoid: ['fold'] }).map((r) => r.edge)
+    ).toEqual([0]);
+  });
+
+  it('encodes edges as bits', () => {
+    expect(edgeMask(['top', 'right', 'bottom', 'left'])).toBe(15);
+    expect(edgeMask(['left', 'right'])).toBe(10);
+    expect(edgeMask(['right', 'right'])).toBe(2);
+    expect(edgeMask([])).toBe(0);
+  });
 });
 
 describe('metricsForSubrect', () => {
@@ -327,13 +471,13 @@ describe('metricsForSubrect', () => {
     expect(regions[0]).toEqual({
       kind: 'status',
       edge: 'right',
-      frame: { x: 382, y: 0, width: 84, height: 108 },
+      frame: { x: 382, y: 0, width: 84, height: 74 },
     });
     expect(regions[1]?.frame).toEqual({
       x: 382,
-      y: 340,
+      y: 392,
       width: 84,
-      height: 214,
+      height: 162,
     });
   });
 
@@ -385,37 +529,41 @@ describe('parseMetrics', () => {
   });
 });
 
-describe('grewByOwnPadding', () => {
+describe('followsOwnPadding', () => {
   const box = { x: 100, y: 0, width: 200, height: 40 };
   const none = { top: 0, right: 0, bottom: 0, left: 0 };
   const padded = { top: 0, right: 56, bottom: 0, left: 0 };
 
-  it('spots a content-sized element growing by the padding it was given', () => {
+  it('spots a content-sized element growing into the region by the padding it was given', () => {
     const grown = { ...box, width: 256 };
     expect(
-      grewByOwnPadding(
-        { rect: box, applied: none },
-        grown,
-        padded,
-        'horizontal'
-      )
+      followsOwnPadding({ rect: box, applied: none }, grown, padded, 'right')
     ).toBe(true);
   });
 
   it('ignores an element whose size comes from its parent', () => {
     expect(
-      grewByOwnPadding({ rect: box, applied: none }, box, padded, 'horizontal')
+      followsOwnPadding({ rect: box, applied: none }, box, padded, 'right')
     ).toBe(false);
   });
 
   it('ignores size changes when the padding did not change', () => {
     const grown = { ...box, width: 256 };
     expect(
-      grewByOwnPadding(
-        { rect: box, applied: padded },
+      followsOwnPadding({ rect: box, applied: padded }, grown, padded, 'right')
+    ).toBe(false);
+  });
+
+  it('ignores a content-sized bar pinned to the bottom, which grows away from the region', () => {
+    // A dock at the bottom of a 678 pt screen gets 34 pt of bottom padding: its top moves up, its bottom stays.
+    const dock = { x: 0, y: 610, width: 466, height: 68 };
+    const grown = { x: 0, y: 576, width: 466, height: 102 };
+    expect(
+      followsOwnPadding(
+        { rect: dock, applied: none },
         grown,
-        padded,
-        'horizontal'
+        { ...none, bottom: 34 },
+        'bottom'
       )
     ).toBe(false);
   });
@@ -513,5 +661,89 @@ describe('regionsEqual', () => {
         })
       )
     ).toBe(false);
+  });
+});
+
+describe('getVerticalBar', () => {
+  it('describes the Duo column, with items centered on the camera', () => {
+    expect(getVerticalBar(duoTabs)).toEqual({
+      edge: 'right',
+      column: { x: 382, y: 0, width: 84, height: 678 },
+      top: 174,
+      bottom: 644,
+      centerX: 418,
+      items: [{ x: 394, y: 492, width: 48, height: 162 }],
+    });
+  });
+
+  it('starts below a Dynamic Island grown by a Live Activity', () => {
+    const bar = getVerticalBar({
+      ...duo,
+      occlusions: [{ x: 382, y: 0, width: 84, height: 290, active: true }],
+    });
+    expect(bar?.top).toBe(290);
+  });
+
+  it('is null on a regular iPhone and without status information', () => {
+    expect(getVerticalBar(fixtures.iPhone18ProPortrait)).toBeNull();
+    expect(getVerticalBar({ ...duo, barRegionInsets: null })).toBeNull();
+    expect(
+      getVerticalBar({ ...duo, reservedRegionsSupported: false })
+    ).toBeNull();
+  });
+});
+
+describe('verticalBarBackButtonFrame', () => {
+  it('puts the button where UIKit puts the back button: right below the status cluster', () => {
+    const bar = getVerticalBar(duo);
+    expect(bar && verticalBarBackButtonFrame(bar)).toEqual({
+      x: 394,
+      y: 174,
+      width: 48,
+      height: 48,
+    });
+  });
+
+  it('matches the system back button on the inner display in landscape, below its shorter status cluster', () => {
+    const bar = getVerticalBar(fixtures.iPhoneDuoInnerLandscape);
+    // Where UIKit drew the back button of a native header in the same pose.
+    expect(bar && verticalBarBackButtonFrame(bar)).toEqual({
+      x: 879,
+      y: 124,
+      width: 48,
+      height: 48,
+    });
+  });
+
+  it('puts the bar on the left in landscape on the outer display, below the camera', () => {
+    const metrics = fixtures.iPhoneDuoOuterLandscape;
+    // Without the native header's own back button, which UIKit drew at { x: 24, y: 82, 48 x 48 }.
+    const bar = getVerticalBar({ ...metrics, systemBars: [] });
+    expect(bar?.edge).toBe('left');
+    expect(bar && verticalBarBackButtonFrame(bar)).toEqual({
+      x: 24,
+      y: 82,
+      width: 48,
+      height: 48,
+    });
+    expect(buildRegions(metrics)).toContainEqual({
+      kind: 'status',
+      edge: 'left',
+      frame: { x: 0, y: 0, width: 84, height: 82 },
+    });
+  });
+
+  it('has no vertical bar on the inner display in portrait', () => {
+    expect(getVerticalBar(fixtures.iPhoneDuoInnerPortrait)).toBeNull();
+  });
+
+  it('gives way to a back button UIKit already shows there', () => {
+    const bar = getVerticalBar(fixtures.iPhoneDuoOuterPortraitWithNativeHeader);
+    expect(bar && verticalBarBackButtonFrame(bar)).toBeNull();
+  });
+
+  it('shares the bar with a tab bar further down', () => {
+    const bar = getVerticalBar(duoTabs);
+    expect(bar && verticalBarBackButtonFrame(bar)).not.toBeNull();
   });
 });

@@ -3,12 +3,13 @@
     "name": "GranularSafeAreas Example",
     "slug": "react-native-granular-safe-areas-example",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "granularsafeareas.example"
+      "bundleIdentifier": "granularsafeareas.example",
+      "appleTeamId": "VTHJ4G9DW9"
     },
     "android": {
       "adaptiveIcon": {

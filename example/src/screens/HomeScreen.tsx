@@ -18,7 +18,7 @@ import type { RootStackParamList } from '../navigation';
 import { useAvoid, useSettings, type Avoidance } from '../settings';
 
 const DEMOS: {
-  route: keyof RootStackParamList;
+  route: Exclude<keyof RootStackParamList, 'TripDetails'>;
   title: string;
   detail: string;
   ios?: boolean;

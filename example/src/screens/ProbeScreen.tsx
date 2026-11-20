@@ -26,7 +26,11 @@ export function ProbeScreen() {
   const collect = async () => {
     const result = await getDiagnostics();
     const json = JSON.stringify(
-      result ?? { note: `No native diagnostics on ${Platform.OS}` },
+      {
+        providerMetrics: metrics,
+        regions,
+        native: result ?? { note: `No native diagnostics on ${Platform.OS}` },
+      },
       null,
       2
     );

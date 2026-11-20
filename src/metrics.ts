@@ -80,6 +80,7 @@ export function parseMetrics(json: string | null | undefined) {
       : [],
     // Unknown counts as visible: it keeps the band whole unless a vertical bar was found.
     barContainersVisible: data.barContainersVisible !== false,
+    barItemsKnown: data.barItemsKnown === true,
     reservedRegionsSupported: data.reservedRegionsSupported === true,
   };
   return metrics;

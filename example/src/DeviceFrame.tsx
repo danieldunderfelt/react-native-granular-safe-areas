@@ -3,6 +3,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import {
   SafeAreaFrameContext,
   SafeAreaInsetsContext,
+  getVerticalBar,
   type GranularSafeAreaMetrics,
 } from 'react-native-granular-safe-areas';
 
@@ -38,27 +39,45 @@ export function DeviceFrame({
 }
 
 function FakeSystemUI({ metrics }: { metrics: GranularSafeAreaMetrics }) {
-  const { statusBar, occlusions, systemBars, divisions, width, height } =
-    metrics;
+  const { occlusions, systemBars, divisions, width, height } = metrics;
+  const bar = getVerticalBar(metrics);
+  // The occlusion that covers the whole status cluster isn't a camera; draw only the cameras inside it.
+  const cameras = occlusions.filter(
+    (o) => o.active && !(bar && o.width >= bar.column.width - 1)
+  );
+  // A vertical status bar reports a placeholder frame, so lay the time and signal out between the camera and the
+  // bar items instead.
+  const cameraBottom = Math.max(0, ...cameras.map((o) => o.y + o.height));
+  const statusBar =
+    metrics.statusBar &&
+    metrics.statusBar.width >= 10 &&
+    metrics.statusBar.height >= 10
+      ? metrics.statusBar
+      : bar
+        ? {
+            x: bar.column.x,
+            y: cameraBottom,
+            width: bar.column.width,
+            height: bar.top - cameraBottom,
+          }
+        : null;
   const vertical = statusBar && statusBar.height > statusBar.width;
   return (
     <View style={styles.systemUI}>
-      {occlusions
-        .filter((o) => o.active)
-        .map((o, i) => (
-          <View
-            key={`camera-${i}`}
-            style={[
-              styles.camera,
-              {
-                left: o.x + 4,
-                top: o.y + 4,
-                width: o.width - 8,
-                height: o.height - 8,
-              },
-            ]}
-          />
-        ))}
+      {cameras.map((o, i) => (
+        <View
+          key={`camera-${i}`}
+          style={[
+            styles.camera,
+            {
+              left: o.x + 4,
+              top: o.y + 4,
+              width: o.width - 8,
+              height: o.height - 8,
+            },
+          ]}
+        />
+      ))}
       {statusBar ? (
         <View
           style={[
@@ -77,19 +96,33 @@ function FakeSystemUI({ metrics }: { metrics: GranularSafeAreaMetrics }) {
           <Text style={styles.statusText}>▮▮▮</Text>
         </View>
       ) : null}
-      {systemBars.map((bar, i) => (
+      {systemBars.map((item, i) => (
         <View
           key={`bar-${i}`}
           style={[
             styles.systemBar,
-            { left: bar.x, top: bar.y, width: bar.width, height: bar.height },
+            {
+              left: item.x,
+              top: item.y,
+              width: item.width,
+              height: item.height,
+            },
           ]}
         >
-          {['✈︎', '☰', '◎'].map((glyph) => (
-            <Text key={glyph} style={styles.tabGlyph}>
-              {glyph}
-            </Text>
-          ))}
+          {/* A tall item is a tab bar platter; a square one a single button; a wide one a horizontal bar. */}
+          {item.height > 100
+            ? ['✈︎', '☰', '◎'].map((glyph) => (
+                <Text key={glyph} style={styles.tabGlyph}>
+                  {glyph}
+                </Text>
+              ))
+            : item.width < 100
+              ? [
+                  <Text key="back" style={styles.tabGlyph}>
+                    ‹
+                  </Text>,
+                ]
+              : null}
         </View>
       ))}
       {divisions

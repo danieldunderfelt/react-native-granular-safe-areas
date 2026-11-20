@@ -1,6 +1,6 @@
 import { fixtures } from '../fixtures';
 import { buildRegions } from '../geometry';
-import { GranularSafeAreaStore } from '../store';
+import { GranularSafeAreaStore, type BackButtonRegistration } from '../store';
 
 const duo = fixtures.iPhoneDuoOuterPortraitWithTabBar;
 
@@ -63,6 +63,87 @@ describe('GranularSafeAreaStore', () => {
     jest.runAllTimers();
     expect(refresh).toHaveBeenCalledTimes(1);
     jest.useRealTimers();
+  });
+
+  describe('vertical bar back button', () => {
+    const plainDuo = fixtures.iPhoneDuoOuterPortrait;
+    const register = (
+      store: GranularSafeAreaStore,
+      overrides: Partial<BackButtonRegistration> = {}
+    ) => {
+      const id = store.createBackButtonId();
+      const onPress = jest.fn();
+      store.registerBackButton(id, {
+        onPress,
+        icon: 'back',
+        accessibilityLabel: 'Back',
+        enabled: true,
+        inWindow: true,
+        ...overrides,
+      });
+      return { id, onPress };
+    };
+
+    it('shows the button below the status cluster, and adds it as a region', () => {
+      const { store } = makeStore();
+      store.publish(buildRegions(plainDuo), plainDuo);
+      const { id } = register(store);
+      const { backButton, regions } = store.getSnapshot();
+      expect(backButton).toMatchObject({
+        owner: id,
+        frame: { x: 394, y: 174, width: 48, height: 48 },
+      });
+      expect(regions).toContainEqual({
+        kind: 'systemBar',
+        edge: 'right',
+        frame: { x: 382, y: 174, width: 84, height: 48 },
+      });
+    });
+
+    it('shows nothing without a vertical bar', () => {
+      const { store } = makeStore();
+      const phone = fixtures.iPhone18ProPortrait;
+      store.publish(buildRegions(phone), phone);
+      register(store);
+      expect(store.getSnapshot().backButton).toBeNull();
+    });
+
+    it('goes to the most recent screen that is showing, and presses its handler', () => {
+      const { store } = makeStore();
+      store.publish(buildRegions(plainDuo), plainDuo);
+      const first = register(store);
+      const second = register(store);
+      expect(store.getSnapshot().backButton?.owner).toBe(second.id);
+
+      // The second screen's tab is no longer selected.
+      store.updateBackButton(second.id, { inWindow: false });
+      expect(store.getSnapshot().backButton?.owner).toBe(first.id);
+      store.pressBackButton();
+      expect(first.onPress).toHaveBeenCalledTimes(1);
+      expect(second.onPress).not.toHaveBeenCalled();
+
+      store.unregisterBackButton(first.id);
+      expect(store.getSnapshot().backButton).toBeNull();
+    });
+
+    it('skips disabled buttons', () => {
+      const { store } = makeStore();
+      store.publish(buildRegions(plainDuo), plainDuo);
+      register(store, { enabled: false });
+      expect(store.getSnapshot().backButton).toBeNull();
+    });
+
+    it('follows the status cluster as it grows', () => {
+      const { store } = makeStore();
+      store.publish(buildRegions(plainDuo), plainDuo);
+      register(store);
+      const liveActivity = {
+        ...plainDuo,
+        occlusions: [{ x: 382, y: 0, width: 84, height: 290, active: true }],
+      };
+      store.publish(buildRegions(liveActivity), liveActivity);
+      expect(store.getSnapshot().backButton?.frame.y).toBe(290);
+    });
   });
 
   it('stops notifying after unsubscribing', () => {

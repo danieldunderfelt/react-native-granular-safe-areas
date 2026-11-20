@@ -11,6 +11,7 @@ import {
   EDGES,
   insetsEqual,
   placementToRect,
+  sweepElement,
   sweepRegions,
   ZERO_INSETS,
   type GranularPlacement,
@@ -87,7 +88,7 @@ export function useGranularSafeAreaInsets(
       metrics
     );
     return computeElementInsets(
-      rect,
+      scrollable ? sweepElement(rect, scrollable, metrics) : rect,
       scrollable
         ? sweepRegions(regions, scrollable, metrics.width, metrics.height)
         : regions,

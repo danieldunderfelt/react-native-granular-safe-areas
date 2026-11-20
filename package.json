@@ -108,6 +108,15 @@
       "components": {
         "GranularSafeAreaProviderView": {
           "className": "GSAProviderView"
+        },
+        "GranularSafeAreaBarButton": {
+          "className": "GSABarButtonView"
+        },
+        "GranularSafeAreaAnchor": {
+          "className": "GSAAnchorView"
+        },
+        "GranularSafeAreaDynamicView": {
+          "className": "GSADynamicView"
         }
       },
       "modulesProvider": {

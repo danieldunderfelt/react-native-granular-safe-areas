@@ -1,6 +1,6 @@
 #import "GSAMetrics.h"
 
-#import <React/RCTComponentViewProtocol.h>
+#import <React/RCTViewComponentView.h>
 #import <sys/utsname.h>
 
 // The iPhone Duo APIs (reserved regions, verticalBarEdge, bar layout regions) ship in the iOS 27.1 SDK. Building with
@@ -79,16 +79,49 @@ static NSValue *_Nullable GSAStatusBarFrame(UIView *view)
 /// whether the name match is needed; see `viewsNearEdges` in the diagnostics.
 static BOOL GSAIsBarView(UIView *view)
 {
-  if ([view isKindOfClass:UITabBar.class] || [view isKindOfClass:UIToolbar.class] ||
-      [view isKindOfClass:UINavigationBar.class]) {
-    return YES;
-  }
-  NSString *name = NSStringFromClass(view.class);
-  return [name hasPrefix:@"_UI"] && [name rangeOfString:@"VerticalBar"].location != NSNotFound;
+  return [view isKindOfClass:UITabBar.class] || [view isKindOfClass:UIToolbar.class] ||
+      [view isKindOfClass:UINavigationBar.class];
 }
 
-/// The visible bars in `view`'s subtree. Bars are leaves: their insides aren't scanned.
-static void GSACollectBars(UIView *view, NSMutableArray<UIView *> *bars, NSUInteger depth)
+/// Since iOS 26, UINavigationController and UITabBarController draw their bar items in a floating bar container
+/// (`_UIFloatingBarContainerView`): a transparent view covering the whole controller, with one glass capsule per item
+/// group wherever the system puts it. On the iPhone Duo that is the vertical bar: the back button under the status
+/// cluster, header items below it, the tab bar platter at the bottom. Verified on the iOS 27.2 Duo simulator.
+static BOOL GSAIsFloatingBarContainer(UIView *view)
+{
+  return [NSStringFromClass(view.class) containsString:@"FloatingBarContainer"];
+}
+
+/// The item groups in a floating bar container: its outermost descendants that are smaller than the container. The
+/// views above them are wrappers that either cover the whole container or have no size at all.
+static void GSACollectFloatingBarItems(UIView *view, UIView *container, NSMutableArray<UIView *> *items, NSUInteger depth)
+{
+  if (depth > 32) {
+    return;
+  }
+  CGSize containerSize = container.bounds.size;
+  for (UIView *subview in view.subviews) {
+    if (subview.hidden || subview.alpha < 0.01) {
+      continue;
+    }
+    CGRect frame = [container convertRect:subview.bounds fromView:subview];
+    BOOL wrapper = CGRectIsEmpty(frame) ||
+        (frame.size.width >= containerSize.width - 1 && frame.size.height >= containerSize.height - 1);
+    if (wrapper) {
+      GSACollectFloatingBarItems(subview, container, items, depth + 1);
+    } else {
+      [items addObject:subview];
+    }
+  }
+}
+
+/// The visible bars in `view`'s subtree: UIKit bars, and the item groups of floating bar containers. Bars are leaves:
+/// their insides aren't scanned.
+static void GSACollectBars(
+    UIView *view,
+    NSMutableArray<UIView *> *bars,
+    NSUInteger depth,
+    BOOL *foundFloatingBars)
 {
   if (view.hidden || view.alpha < 0.01 || depth > 256) {
     return;
@@ -97,8 +130,13 @@ static void GSACollectBars(UIView *view, NSMutableArray<UIView *> *bars, NSUInte
     [bars addObject:view];
     return;
   }
+  if (GSAIsFloatingBarContainer(view)) {
+    *foundFloatingBars = YES;
+    GSACollectFloatingBarItems(view, view, bars, 0);
+    return;
+  }
   for (UIView *subview in view.subviews) {
-    GSACollectBars(subview, bars, depth + 1);
+    GSACollectBars(subview, bars, depth + 1, foundFloatingBars);
   }
 }
 
@@ -157,11 +195,14 @@ static BOOL GSAHasVisibleBarContainer(UIViewController *controller, NSUInteger d
 
 @implementation GSAWindowBars
 
-- (instancetype)initWithBarViews:(NSArray<UIView *> *)barViews containersVisible:(BOOL)containersVisible
+- (instancetype)initWithBarViews:(NSArray<UIView *> *)barViews
+               containersVisible:(BOOL)containersVisible
+                   barItemsKnown:(BOOL)barItemsKnown
 {
   if (self = [super init]) {
     _barViews = barViews;
     _containersVisible = containersVisible;
+    _barItemsKnown = barItemsKnown;
   }
   return self;
 }
@@ -171,11 +212,22 @@ static BOOL GSAHasVisibleBarContainer(UIViewController *controller, NSUInteger d
   UIViewController *root = GSAPresentationRoot(view);
   UIView *scanRoot = root.viewIfLoaded ?: GSAWindowOf(view);
   NSMutableArray<UIView *> *bars = [NSMutableArray new];
+  BOOL foundFloatingBars = NO;
   if (scanRoot != nil) {
-    GSACollectBars(scanRoot, bars, 0);
+    GSACollectBars(scanRoot, bars, 0, &foundFloatingBars);
+  }
+  if (foundFloatingBars) {
+    // With floating bars, a vertical UITabBar or UIToolbar is a placeholder: on the Duo, UITabBarController keeps an
+    // empty UITabBar running the full height of the column, while the tabs are drawn in a platter in the floating bar
+    // container. Its items are already in `bars`.
+    NSIndexSet *placeholders = [bars indexesOfObjectsPassingTest:^BOOL(UIView *bar, NSUInteger index, BOOL *stop) {
+      return GSAIsBarView(bar) && ![bar isKindOfClass:UINavigationBar.class] &&
+          bar.bounds.size.height > bar.bounds.size.width;
+    }];
+    [bars removeObjectsAtIndexes:placeholders];
   }
   BOOL containersVisible = root != nil && GSAHasVisibleBarContainer(root, 0);
-  return [[self alloc] initWithBarViews:bars containersVisible:containersVisible];
+  return [[self alloc] initWithBarViews:bars containersVisible:containersVisible barItemsKnown:foundFloatingBars];
 }
 
 @end
@@ -242,6 +294,7 @@ NSDictionary *_Nullable GSAMetricsForView(UIView *view, GSAWindowBars *_Nullable
     @"divisions" : @[],
     @"systemBars" : @[],
     @"barContainersVisible" : @NO,
+    @"barItemsKnown" : @NO,
     @"reservedRegionsSupported" : @NO,
   } mutableCopy];
 
@@ -281,6 +334,7 @@ NSDictionary *_Nullable GSAMetricsForView(UIView *view, GSAWindowBars *_Nullable
   }
   metrics[@"systemBars"] = systemBars;
   metrics[@"barContainersVisible"] = @(windowBars.containersVisible);
+  metrics[@"barItemsKnown"] = @(windowBars.barItemsKnown);
 
   return metrics;
 }
@@ -318,7 +372,8 @@ static void GSACollectEdgeViews(
     return;
   }
   CGRect frame = [view convertRect:view.bounds toView:nil];
-  BOOL isReact = [view conformsToProtocol:@protocol(RCTComponentViewProtocol)];
+  // Not `conformsToProtocol:RCTComponentViewProtocol`: React Native adds that protocol to every UIView in a category.
+  BOOL isReact = [view isKindOfClass:RCTViewComponentView.class];
   if (!isReact && depth > 0 &&
       (CGRectIntersectsRect(frame, leftStrip) || CGRectIntersectsRect(frame, rightStrip))) {
     [out addObject:@{
@@ -435,6 +490,20 @@ static NSDictionary *GSAWindowDiagnostics(UIWindow *window)
 #endif
 
   info[@"metrics"] = GSAMetricsForView(window, nil) ?: NSNull.null;
+  GSAWindowBars *bars = [GSAWindowBars scanForView:window];
+  NSMutableArray *barViews = [NSMutableArray new];
+  for (UIView *bar in bars.barViews) {
+    [barViews addObject:@{
+      @"classes" : GSAClassChain(bar),
+      @"frame" : GSARect([bar convertRect:bar.bounds toView:nil]),
+      @"visible" : @(GSAIsVisible(bar)),
+    }];
+  }
+  info[@"bars"] = @{
+    @"views" : barViews,
+    @"containersVisible" : @(bars.containersVisible),
+    @"barItemsKnown" : @(bars.barItemsKnown),
+  };
   if (window.rootViewController != nil) {
     info[@"viewControllers"] = GSAViewControllerTree(window.rootViewController, 0);
   }

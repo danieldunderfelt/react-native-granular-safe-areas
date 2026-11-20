@@ -6,6 +6,7 @@ import { HeaderItemsScreen } from './screens/HeaderItemsScreen';
 import { HomeScreen } from './screens/HomeScreen';
 import { MarkersScreen } from './screens/MarkersScreen';
 import { ProbeScreen } from './screens/ProbeScreen';
+import { TripDetailsScreen } from './screens/TripDetailsScreen';
 import { TripScreen } from './screens/TripScreen';
 
 export const linking = {
@@ -14,6 +15,7 @@ export const linking = {
     screens: {
       Home: '',
       Trip: 'trip',
+      TripDetails: 'trip/:code',
       Markers: 'markers',
       Tabs: 'tabs',
       HeaderItems: 'header-items',
@@ -26,6 +28,7 @@ export const linking = {
 export type RootStackParamList = {
   Home: undefined;
   Trip: undefined;
+  TripDetails: { code: string };
   Markers: undefined;
   Tabs: undefined;
   HeaderItems: undefined;
@@ -89,7 +92,12 @@ export function RootStack() {
       <Stack.Screen
         name="Trip"
         component={TripScreen}
-        options={{ headerShown: false }}
+        options={{ headerShown: false, statusBarStyle: 'light' }}
+      />
+      <Stack.Screen
+        name="TripDetails"
+        component={TripDetailsScreen}
+        options={{ headerShown: false, statusBarStyle: 'light' }}
       />
       <Stack.Screen
         name="Markers"

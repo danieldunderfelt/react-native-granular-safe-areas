@@ -3,11 +3,14 @@
 NS_ASSUME_NONNULL_BEGIN
 
 /// The UIKit bars where a view is presented, which is expensive to work out: it walks the view hierarchy. `barViews`
-/// are the visible UITabBar, UIToolbar and UINavigationBar views, plus private vertical bar containers.
-/// `containersVisible` says whether a container that can put bars in the vertical column is showing.
+/// are the visible UITabBar, UIToolbar and UINavigationBar views, plus the item groups (glass capsules) of the floating
+/// bar containers that hold bar items since iOS 26, including the iPhone Duo's vertical bar.
+/// `containersVisible` says whether a container that can put bars in the vertical column is showing, and
+/// `barItemsKnown` whether floating bar containers were found, so `barViews` lists every bar item, even none.
 @interface GSAWindowBars : NSObject
 @property (nonatomic, readonly) NSArray<UIView *> *barViews;
 @property (nonatomic, readonly) BOOL containersVisible;
+@property (nonatomic, readonly) BOOL barItemsKnown;
 /// Scans the view controller hierarchy `view` is presented in: the root view controller for the main app, or the
 /// presented view controller for a sheet or modal. Other presentations' bars don't cover `view`'s content.
 + (instancetype)scanForView:(UIView *)view;
