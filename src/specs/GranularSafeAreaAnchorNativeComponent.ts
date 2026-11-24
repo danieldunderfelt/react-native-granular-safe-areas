@@ -31,9 +31,10 @@ export interface NativeProps extends ViewProps {
 }
 
 /**
- * An empty view in a screen. It reports whether it's in a window (UIKit removes the views of screens that aren't
- * showing: the screens below the top of a navigation stack, unselected tabs), and shows the screen's system back
- * button: a glass button in the iPhone Duo's vertical bar, part of the screen, so it moves and leaves with it.
+ * An empty view in a screen. It reports whether its screen is showing (`inWindow`): in a window, where UIKit removes
+ * the views of screens that aren't showing (the screens below the top of a navigation stack, unselected tabs), and
+ * neither hidden nor fully transparent through an ancestor. It shows the screen's system back button: a glass button
+ * in the iPhone Duo's vertical bar, part of the screen, so it moves and leaves with it.
  */
 export default codegenNativeComponent<NativeProps>(
   'GranularSafeAreaAnchor'

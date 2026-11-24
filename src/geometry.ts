@@ -402,6 +402,21 @@ export function getVerticalBar(
   };
 }
 
+/**
+ * The edge the system puts a tab bar on where these metrics are, whether or not the app shows one: the vertical bar's
+ * edge where there is one (the iPhone Duo closed, or open in landscape), the top of an iPad window of regular width,
+ * and the bottom everywhere else, Android and the web included. `bottom` without metrics.
+ */
+export function getTabBarEdge(metrics: GranularSafeAreaMetrics | null): Edge {
+  if (metrics?.platform !== 'ios') return 'bottom';
+  const vertical = resolveVerticalBarEdge(metrics);
+  if (vertical) return vertical;
+  if (metrics.idiom === 'pad' && metrics.horizontalSizeClass === 'regular') {
+    return 'top';
+  }
+  return 'bottom';
+}
+
 /** The size of a vertical bar button: the glass circle UIKit draws for the back button and bar items. */
 export const VERTICAL_BAR_ITEM_SIZE = 48;
 

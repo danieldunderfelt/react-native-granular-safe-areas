@@ -26,6 +26,7 @@ A drop-in for react-native-safe-area-context's `SafeAreaView`. Takes `ViewProps`
 | `dynamic` | `boolean` | `false` | Follow the view as it moves, avoiding only what it overlaps right now. Implies `granular` |
 | `avoid` | `readonly SafeAreaRegionKind[]` | all but `'fold'` | Region kinds to avoid. `[]` avoids nothing |
 | `spacing` | `number` | `0` | Extra clearance around each region, in points |
+| `gap` | `number` | | Keep the content this far from what it avoids, counting the view's own padding: each edge gets the larger of its own padding and the overlap plus `gap` |
 | `underlying` | `boolean` | `false` | Also avoid app UI drawn beneath the view |
 | `onInsetsChange` | `(insets: EdgeInsets) => void` | | Called with the view's insets, once measured and whenever they change |
 | `ref` | `Ref<HostInstance>` | | The underlying host view |
@@ -45,6 +46,22 @@ Your own UI floating over the content, which other views avoid where it's drawn 
 | Prop | Type | Default | |
 | --- | --- | --- | --- |
 | `edge` | `Edge` | the nearest screen edge | The edge it belongs to: content beneath it moves away from that edge |
+
+### `useSafeAreaStyle(options?): SafeAreaStyle`
+
+`SafeAreaView` for a component whose root you don't control, such as a `Pressable`. Render `probe` inside the root and
+put `style` after the root's own style.
+
+- `options: UseSafeAreaStyleOptions`: `edges`, `mode`, `granular`, `dynamic`, `avoid`, `spacing`, `gap`, `underlying`,
+  `onInsetsChange`, and `style`, the root's own style, which `additive` and `maximum` edges build on.
+- Returns `{ style: ViewStyle | null; insets: EdgeInsets; probe: ReactElement }`. `probe` is an invisible view,
+  absolutely positioned to fill the root, that measures it natively.
+
+### `SafeAreaDefaults`
+
+Default props for every `SafeAreaView`, `SafeAreaAccessory`, `AnimatedSafeAreaView` and `useSafeAreaStyle` inside it:
+`edges`, `mode`, `granular`, `avoid`, `spacing`, `gap`, `underlying`. A view's own props win, and nested defaults add
+to the ones around them. It measures nothing.
 
 ### `useSafeAreaViewInsets(): EdgeInsets`
 
@@ -95,6 +112,11 @@ type SystemControls = {
 };
 ```
 
+### `useTabBarEdge(): Edge`
+
+Where the system puts a tab bar here, whether or not the app has one: the vertical bar's edge on the iPhone Duo
+(closed, or open in landscape), `'top'` in an iPad window of regular width, `'bottom'` everywhere else.
+
 ### `SystemBackButton`, `useSystemBackButton(options)`
 
 A system back button where the platform has a place for one in its own controls (the iPhone Duo's vertical bar), in
@@ -107,7 +129,11 @@ place of your own.
 | `icon` | `'back' \| 'close'` | `'back'` | A chevron, or a cross for modals |
 | `accessibilityLabel` | `string` | `'Back'` / `'Close'` | |
 
-`SystemBackButton` takes the options plus `children`, your own back button, shown where the system's isn't.
+`SystemBackButton` takes the options plus `children`, your own back button, shown where the system's isn't, and
+`keepSpace` (`false`): keep your button laid out but invisible while the system shows its own, instead of unmounting it.
+
+The most recent screen that is showing gets the button: in the window, and not hidden or fully transparent through an
+ancestor (`opacity: 0`, `display: 'none'`), checked after every React Native update.
 `useSystemBackButton` returns `{ shown: boolean; button: ReactElement }`: render `button` anywhere in the screen, and
 hide your own while `shown`.
 
@@ -123,6 +149,11 @@ Optional. Takes `ViewProps`, plus:
 
 Views and hooks inside measure relative to the provider.
 
+### `GranularSafeAreaDebugOverlay`
+
+Draws the regions, labelled with their kinds, and a caption with how many there are. `<GranularSafeAreaProvider debug>`
+renders one; without a provider, render it last in the app's root view. Takes an optional `store`.
+
 ### Functions and values
 
 | Export | |
@@ -133,7 +164,8 @@ Views and hooks inside measure relative to the provider.
 
 ### Types
 
-`SafeAreaViewProps`, `SafeAreaAccessoryProps`, `SafeAreaInsetsForOptions`, `GranularInsetsOptions`,
+`SafeAreaViewProps`, `SafeAreaAccessoryProps`, `SafeAreaDefaultsOptions`, `UseSafeAreaStyleOptions`, `SafeAreaStyle`,
+`GranularSafeAreaDebugOverlayProps`, `SafeAreaInsetsForOptions`, `GranularInsetsOptions`,
 `GranularSafeAreaMode`, `GranularPlacement`, `SafeAreaRegion`, `SafeAreaRegionKind`, `SystemControls`,
 `SystemBackButtonProps`, `SystemBackButtonIcon`, `UseSystemBackButtonOptions`, `UseSystemBackButtonResult`,
 `GranularSafeAreaProviderProps`, `GranularSafeAreaMetrics`, `FixtureName`, `ScrollAxes`, and safe-area-context's
@@ -152,9 +184,12 @@ Takes the props of `SafeAreaView`, with Reanimated's animated styles, plus:
 
 ## `/jest`
 
-The main entry's exports, as plain views with no insets: `SafeAreaView` and `SafeAreaAccessory` render a `View`, hooks
-return zero insets, no regions and no system controls, and `SystemBackButton` shows your own button. react-native-safe-
-area-context comes through as is, so mock it too:
+The main entry's exports for Jest. `SafeAreaView` and `SafeAreaAccessory` render a `View`, `useSafeAreaViewInsets` and
+`useSafeAreaStyle` give zero insets. By default there's nothing to avoid; with `<GranularSafeAreaProvider mock={...}>`
+or `mockSafeAreaMetrics(metrics | null)`, the hooks compute what they would on that device (`useSafeAreaRegions`,
+`useSystemControls`, `useSafeAreaInsetsFor`, `useTabBarEdge`), and `SystemBackButton` shows a pressable stand-in with
+the test ID `SystemBackButton` where the system would show its button. react-native-safe-area-context comes through as
+is, so mock it too:
 
 ```ts
 jest.mock('react-native-granular-safe-areas', () => require('react-native-granular-safe-areas/jest'));
@@ -170,6 +205,7 @@ jest.mock('react-native-safe-area-context', () => require('react-native-safe-are
 | `computeElementInsets(element, regions, options?)` | The insets an element needs to clear the regions |
 | `safeAreaViewInsets(element, options)` | What a `SafeAreaView` computes: bands or regions, scroll views, what covers it, where it's seen |
 | `getSystemControls(metrics, extra?)` | The system controls strip |
+| `getTabBarEdge(metrics)` | Where the system puts a tab bar |
 | `placementToRect(placement, { width, height })` | A `GranularPlacement` as a rect |
 | `metricsFromInsets(width, height, insets, platform?)` | Metrics for a plain safe area |
 | `metricsForSubrect(metrics, rect)` | Metrics relative to a part of the screen |

@@ -106,6 +106,9 @@ Scroll views are detected (any React Native `ScrollView`, so `FlatList`, `Sectio
 - The bands on the edges the content scrolls towards are left to the scroll view's content inset. Otherwise a row
   measured at the bottom would keep the home indicator's inset as it scrolls up.
 - A view that is out of sight when it's measured, further down the list, gets the inset it will need on screen.
+- Clipping inside the scroll view (a row or a rounded card with `overflow: hidden`) scrolls along with the content, so
+  it doesn't limit where the view can be seen along the scroll axis: every row in a list lines up, whichever ones
+  happen to be next to the status cluster.
 - `granular` acts like the default there, because the view's position along the scroll axis isn't fixed. Use
   `dynamic` for granular content in a scroll view.
 - A pager (`pagingEnabled`) is measured where its pages come to rest.
@@ -123,7 +126,58 @@ regular safe area.
 | `none` | Nothing; read the insets with `onInsetsChange` or `useSafeAreaViewInsets` | Layouts of your own |
 
 `edges` works as in react-native-safe-area-context: a list of edges, or an object with `'additive'` (add the inset to
-the view's own padding or margin), `'maximum'` (use whichever is larger) or `'off'` per edge.
+the view's own padding or margin), `'maximum'` (use whichever is larger) or `'off'` per edge. The view's own padding is
+read the way React Native lays it out: `paddingStart`/`paddingEnd`, the `paddingInline`/`paddingBlock` aliases and the
+shorthands count, and in a right-to-left app the inset goes on the edge it belongs to.
+
+### Where the padding lives: `gap`
+
+The inset is the overlap: how far the view reaches into what it avoids. What that does to the content depends on who
+owns the padding around it:
+
+```
+The view owns its padding                    The parent owns it
+┌─ view, padding 16 ─────────┬────┐          ┌─ parent, padding 16 ───────┬────┐
+│ [content]       16 + 84 →  │ ●  │          │  ┌─ view ──────────────┐   │ ●  │
+│                            │    │          │  │ [content]      68 → │   │    │
+```
+
+On the left, the inset is added to the view's own 16 pt, so the content stays 16 pt from the status cluster. On the
+right, the view has no padding of its own, so the content ends flush against it. Rather than keeping track of which
+case a view is in, give it a `gap`:
+
+```tsx
+<SafeAreaView granular edges={['top', 'right']} gap={16} style={styles.card}>…</SafeAreaView>
+```
+
+With `gap`, each edge gets whichever is larger: the view's own padding, or the overlap plus the gap. The content ends up
+16 pt from the OS UI in both cases above, and a view clear of everything keeps its own padding. (It's `spacing` with
+`'maximum'` edges.) `spacing` alone adds clearance on top of whatever padding there is.
+
+### Components whose root you don't control
+
+A `SafeAreaView` is a view of its own. Wrapping a component in one changes the layout when the component's root is
+what's laid out: a `Pressable` with `flex: 1`, a button stretched by its parent. `useSafeAreaStyle` works on the root
+itself. It gives you a style to put on the root and a `probe` to render inside it: an invisible, absolutely positioned
+view that fills the root and measures it natively, the same way a `SafeAreaView` measures itself.
+
+```tsx
+import { useSafeAreaStyle } from 'react-native-granular-safe-areas';
+
+function Button({ style, children, ...props }: ButtonProps) {
+  const safeArea = useSafeAreaStyle({ edges: ['left', 'right'], granular: true, style: styles.button });
+  return (
+    <Pressable {...props} style={(state) => [styles.button, resolve(style, state), safeArea.style]}>
+      {safeArea.probe}
+      {children}
+    </Pressable>
+  );
+}
+```
+
+It takes the options of `SafeAreaView`, `mode` included, plus `style`: the root's own style, so additive edges can add
+to its padding. It returns `style`, `insets` and `probe`. The root must render its children (a `Pressable` and any
+`View` do).
 
 On iOS and Android every `SafeAreaView` is a native view that measures itself, and applies `offset` itself, in the
 same frame.
@@ -313,6 +367,23 @@ returns `null`: its `edge`, the `strip`, the `occupied` stretches (the status cl
 buttons, the system back button), the `free` ones, the system's `itemSize`, and the `center` line its items are
 centered on. Most apps never need it.
 
+`useTabBarEdge()` says where the system puts a tab bar here, whether or not the app has one: `'right'` or `'left'`
+on the iPhone Duo (closed, or open in landscape), `'top'` in an iPad window of regular width, and `'bottom'`
+everywhere else, Android and the web included. Use it to put a tab bar of your own where the system's would go.
+
+**Floating UI above whichever tab bar there is** doesn't need it, though. UIKit's tab bar is a `controls` region
+wherever it is, so a granular view in `offset` mode moves clear of it by exactly as much as it overlaps:
+
+```tsx
+// Pinned to the bottom right. Over a bottom tab bar it moves up; on the Duo, where the tab bar is in the column
+// beside it, it moves left; with no tab bar it stays.
+<SafeAreaView granular mode="offset" edges={['bottom', 'right']} spacing={8} style={styles.fab}>
+  <ScanButton />
+</SafeAreaView>
+```
+
+A tab bar you draw yourself counts too once it's a `SafeAreaAccessory`.
+
 ### iPad windows
 
 An iPad window that doesn't fill the screen has its controls (close, minimize, arrange) in its top-left corner, over
@@ -356,7 +427,10 @@ a regular iPhone and the Duo open in portrait, your button stays as it is.
 - **Follows the status cluster**, and moves when it grows (a Live Activity).
 - **Other views avoid it** as a `controls` region; a sheet over it ignores it.
 - **One at a time.** Every screen can offer one; the most recent screen that is showing wins. Screens below the top of
-  a stack and unselected tabs drop out on their own, because UIKit takes their views out of the window.
+  a stack and unselected tabs drop out on their own, because UIKit takes their views out of the window. So does a
+  screen that stays mounted but hidden: `opacity: 0` or `display: 'none'` on it or any ancestor, checked after every
+  React Native update. An opacity animated on the UI thread counts from the next update; for anything else that keeps
+  a mounted screen from the user, turn its button off with `enabled`.
 - **Gives way to UIKit.** If a native header already shows its back button there, your own stays.
 
 | Prop | Default | |
@@ -366,6 +440,7 @@ a regular iPhone and the Duo open in portrait, your button stays as it is.
 | `icon` | `'back'` | `'back'` (chevron) or `'close'` (cross, for modals) |
 | `accessibilityLabel` | `'Back'` / `'Close'` | |
 | `children` | | Your own back button, shown where the system has no place for one |
+| `keepSpace` | `false` | Keep your button laid out (invisible, untouchable, hidden from screen readers) while the system shows its own, instead of unmounting it, so a header row keeps its title where it was. Your button is wrapped in a plain `View` |
 
 When hiding the children isn't enough (a header title that should move over, say), use the hook. It returns `shown`,
 and a `button` element to render anywhere in the screen:
@@ -390,6 +465,7 @@ return (
 | `dynamic` | `false` | `SafeAreaView` only. Follow the view as it moves; implies `granular` |
 | `mode` | `'padding'` | `SafeAreaView` only. `padding`, `margin`, `offset` or `none` |
 | `spacing` | `0` | Extra clearance around each region, in points |
+| `gap` | | `SafeAreaView` and `useSafeAreaStyle`. Keep the content this far from what it avoids, counting the view's own padding |
 | `avoid` | everything except `'fold'` | Region kinds to avoid: `inset`, `status`, `cutout`, `controls`, `accessory`, `fold`. `[]` avoids nothing |
 | `underlying` | `false` | `SafeAreaView` only. Also avoid app UI drawn beneath the view |
 | `onInsetsChange` | | `SafeAreaView` only. Called with the view's insets, once measured and whenever they change |
@@ -418,6 +494,32 @@ UIKit bars count as regions wherever they are, not just in the Duo column, so an
 bar is pushed below it, and moves as the bar grows or shrinks. Don't wrap components that render *inside* a native
 header (custom `headerRight` content): they overlap the bar on purpose.
 
+## Adopting in an existing app
+
+An app that already handles the top and bottom with `useSafeAreaInsets()` doesn't have to change any of that. Keep
+those callers, and let this library handle only the side columns, where the iPhone Duo's status cluster and vertical
+bar are. `SafeAreaDefaults` sets that once instead of on every view:
+
+```tsx
+import { SafeAreaDefaults } from 'react-native-granular-safe-areas';
+
+<SafeAreaDefaults edges={['left', 'right']} granular gap={16}>
+  <App />
+</SafeAreaDefaults>
+```
+
+Every `SafeAreaView`, `SafeAreaAccessory`, `AnimatedSafeAreaView` and `useSafeAreaStyle` inside it takes these unless
+it says otherwise; nested defaults add to the ones around them. It isn't a provider: it measures nothing. Then:
+
+1. Swap the import of `SafeAreaView` from react-native-safe-area-context for this library's. Its `edges` are still
+   respected, so views that pass their own keep behaving as before.
+2. Put `SafeAreaView`s (or `useSafeAreaStyle`) on what reaches the side edges: headers, bars, rows, floating buttons.
+   Anything in a scroll view avoids the whole side column, so lists line up.
+3. Wrap custom back buttons in `SystemBackButton`.
+
+Elsewhere the side insets are a phone's in landscape (the camera side) and an Android cutout, which these views now
+keep clear of as well.
+
 ## Previews, tests and debugging
 
 `GranularSafeAreaProvider` is optional. Use it to:
@@ -426,7 +528,9 @@ header (custom `headerRight` content): they overlap the bar on purpose.
   `fixtures` has the Duo closed in portrait (plain, with native tabs, with a native header) and landscape, open in
   landscape and portrait, folded like a book, a regular iPhone, an iPad full screen and in a smaller window, and a
   Pixel 10 in portrait and landscape, recorded on the simulators and the emulator.
-- **debug**: `debug` draws the regions over the app, labelled with their kinds.
+- **debug**: `debug` draws the regions over the app, labelled with their kinds, with a caption saying how many there
+  are. Without a provider, render `<GranularSafeAreaDebugOverlay />` last in the app's root view. Native sheets and
+  modals are drawn above it; render one in them too.
 - **compare**: `granular={false}` makes every view inside behave like a regular safe area.
 - **scope a custom overlay**: views and `useSafeAreaInsetsFor` inside measure relative to it. Native modals and sheets
   don't need this.
@@ -447,6 +551,30 @@ safe-area-context's own mock, which it re-exports:
 jest.mock('react-native-granular-safe-areas', () => require('react-native-granular-safe-areas/jest'));
 jest.mock('react-native-safe-area-context', () => require('react-native-safe-area-context/jest/mock').default);
 ```
+
+By default it's a device with nothing to avoid. To test a layout such as the iPhone Duo's, give it one of `fixtures`,
+for a subtree or for the whole test:
+
+```tsx
+import { fixtures, GranularSafeAreaProvider } from 'react-native-granular-safe-areas';
+import { mockSafeAreaMetrics } from 'react-native-granular-safe-areas/jest';
+
+render(
+  <GranularSafeAreaProvider mock={fixtures.iPhoneDuoOuterPortrait}>
+    <TripScreen />
+  </GranularSafeAreaProvider>
+);
+
+// or, for everything rendered from here on:
+beforeEach(() => mockSafeAreaMetrics(fixtures.iPhoneDuoOuterPortrait));
+afterEach(() => mockSafeAreaMetrics(null));
+```
+
+The hooks then return what they would on that device: `useSystemControls`, `useSafeAreaRegions`, `useTabBarEdge`,
+`useSafeAreaInsetsFor`. `SystemBackButton` hides your button where the system would show its own, and renders a
+pressable stand-in with the test ID `SystemBackButton` that calls the `onPress` of the screen that would get it, so
+`fireEvent.press(screen.getByTestId('SystemBackButton'))` works. Views stay plain `View`s: nothing is laid out in
+Jest, so there's nothing for them to measure.
 
 The geometry behind the components (`buildRegions`, `safeAreaViewInsets`, `parseMetrics`, ...) is exported from
 `react-native-granular-safe-areas/testing`, for tests and tools.
@@ -536,6 +664,8 @@ The example has:
 - a JS bottom sheet, a native form sheet and a full-screen modal, opened from the trip screen: each overlay's footer
   only keeps clear of what covers it
 - a trip details screen with a floating back button over a hero picture, which becomes the Duo's back button
+- a settings list: rounded rows that clip themselves, kept in line with `gap`, and a button whose root is a
+  `Pressable`, using `useSafeAreaStyle`
 - the same trip screen inside native tabs
 - edge markers, a marker every 40 pt down the right edge that shows which ones move as the system UI changes
 - moving elements: default, granular, dynamic and springy pills moved by a Reanimated animation

@@ -44,7 +44,10 @@ export type BackButtonRegistration = {
   accessibilityLabel: string;
   /** Turned off by the app, e.g. while the screen isn't focused. */
   enabled: boolean;
-  /** Whether the screen the button belongs to is in the window. Off-screen screens of a stack or tabs are not. */
+  /**
+   * Whether the screen the button belongs to is showing: in the window (off-screen screens of a native stack or tabs
+   * aren't), and not hidden or fully transparent through an ancestor.
+   */
   inWindow: boolean;
 };
 
@@ -163,7 +166,7 @@ export class GranularSafeAreaStore {
     return this.nextId++;
   }
 
-  /** Offers a back button for the vertical bar. The most recently registered one that is enabled and in the window wins. */
+  /** Offers a back button for the vertical bar. The most recently registered one that is enabled and showing wins. */
   registerBackButton(id: number, registration: BackButtonRegistration) {
     this.backButtons.set(id, { ...registration, order: this.nextOrder++ });
     this.update(this.snapshot.metrics);

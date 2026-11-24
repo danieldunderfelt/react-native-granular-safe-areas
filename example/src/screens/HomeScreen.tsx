@@ -34,6 +34,11 @@ const DEMOS: {
     detail: 'A marker every 40 pt: watch them follow the system UI',
   },
   {
+    route: 'Settings',
+    title: 'Settings list',
+    detail: 'Rows that clip themselves, a Pressable button',
+  },
+  {
     route: 'Moving',
     title: 'Moving elements',
     detail: 'Default, granular and dynamic on an animated container',

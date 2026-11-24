@@ -474,19 +474,6 @@ static NSArray<NSString *> *GSAObservedLayerKeys(BOOL scrollView)
   }
 }
 
-/// Where the view can be seen, in `space`: inside it and every clipping ancestor (a scroll view, a sheet,
-/// `overflow: hidden`).
-- (CGRect)visibleAreaIn:(UIView *)space laidOut:(BOOL)laidOut
-{
-  CGRect visible = space.bounds;
-  for (UIView *view = self.superview; view != nil && view != space; view = view.superview) {
-    if (view.clipsToBounds || view.layer.masksToBounds) {
-      visible = CGRectIntersection(visible, GSAConvertRect(view.bounds, view, space, laidOut));
-    }
-  }
-  return visible;
-}
-
 /// Measures where the view is in the provider and applies the insets it needs there.
 - (void)measure
 {
@@ -515,8 +502,6 @@ static NSArray<NSString *> *GSAObservedLayerKeys(BOOL scrollView)
       }
     }
   }
-  const CGRect visible = [self visibleAreaIn:space laidOut:laidOut];
-
   // As laid out: without the view's own transform, so animating it never feeds back into its insets, and without the
   // margin JS gave it.
   CALayer *layer = self.layer;
@@ -530,29 +515,55 @@ static NSArray<NSString *> *GSAObservedLayerKeys(BOOL scrollView)
       size.height + _margins.top + _margins.bottom);
   CGRect rect = GSAConvertRect(frame, superview, space, laidOut);
 
+  // One walk up to the provider: where the view can be seen (inside every clipping ancestor: a scroll view, a sheet,
+  // `overflow: hidden`), and the scroll views around it.
+  //
+  // A static view's position along a scroll axis isn't fixed, and neither is that of a clip that scrolls along with it
+  // (a list row, a rounded card). Such a clip is stretched along the axis, so only the scroll view's own bounds count
+  // there: otherwise a row would only avoid what's beside wherever it was last laid out. In a pager, the view and the
+  // clips that page with it are measured where the page comes to rest. A dynamic view follows what's on screen, so it
+  // takes every clip where it is right now.
+  const CGRect spaceBounds = space.bounds;
+  CGRect clip = CGRectNull;
+  BOOL clipped = NO;
   int axes = 0;
   for (UIView *view = superview; view != nil && view != space; view = view.superview) {
-    if (![view isKindOfClass:UIScrollView.class]) {
-      continue;
-    }
-    UIScrollView *scrollView = (UIScrollView *)view;
-    const int scrollAxes = GSAScrollAxes(scrollView);
-    if (scrollAxes == 0) {
-      continue;
-    }
-    if (scrollView.pagingEnabled) {
-      // A pager's content comes to rest on a page, so it's measured where it will rest, like content that doesn't
-      // scroll. A dynamic view follows it as it moves instead.
-      if (!_dynamic) {
-        rect = [self restingRect:rect
-                         inPager:scrollView
-                            axes:scrollAxes
-                     pagerOffset:GSAConvertRect(frame, superview, scrollView, YES)];
+    if ([view isKindOfClass:UIScrollView.class]) {
+      UIScrollView *scrollView = (UIScrollView *)view;
+      const int scrollAxes = GSAScrollAxes(scrollView);
+      if (scrollAxes != 0 && scrollView.pagingEnabled) {
+        // A pager's content comes to rest on a page, so it's measured where it will rest, like content that doesn't
+        // scroll. A dynamic view follows it as it moves instead.
+        if (!_dynamic) {
+          const CGPoint shift = [self restingShiftInPager:scrollView
+                                                     axes:scrollAxes
+                                              pagerOffset:GSAConvertRect(frame, superview, scrollView, YES)];
+          rect = CGRectOffset(rect, shift.x, shift.y);
+          if (clipped && !CGRectIsNull(clip)) {
+            clip = CGRectOffset(clip, shift.x, shift.y);
+          }
+        }
+      } else if (scrollAxes != 0) {
+        axes |= scrollAxes;
+        if (!_dynamic && clipped && !CGRectIsNull(clip)) {
+          if ((scrollAxes & GSAVertical) != 0) {
+            clip.origin.y = CGRectGetMinY(spaceBounds);
+            clip.size.height = CGRectGetHeight(spaceBounds);
+          }
+          if ((scrollAxes & GSAHorizontal) != 0) {
+            clip.origin.x = CGRectGetMinX(spaceBounds);
+            clip.size.width = CGRectGetWidth(spaceBounds);
+          }
+        }
       }
-      continue;
     }
-    axes |= scrollAxes;
+    if (view.clipsToBounds || view.layer.masksToBounds) {
+      const CGRect bounds = GSAConvertRect(view.bounds, view, space, laidOut);
+      clip = clipped ? CGRectIntersection(clip, bounds) : bounds;
+      clipped = YES;
+    }
   }
+  const CGRect visible = clipped ? CGRectIntersection(spaceBounds, clip) : spaceBounds;
 
   // A position along a scroll axis isn't fixed, so a view that doesn't follow it has to avoid whole bands, measured
   // as if it covered all of the scroll view it can be seen in. Regions on the edges it scrolls towards are the scroll
@@ -641,21 +652,20 @@ static NSArray<NSString *> *GSAObservedLayerKeys(BOOL scrollView)
   }
 }
 
-/// Where `rect` will be once `pager` comes to rest on the page that holds the view's center. `inPager` is the view's
+/// How far the view moves once `pager` comes to rest on the page that holds the view's center. `inPager` is the view's
 /// frame in the pager's content.
-- (CGRect)restingRect:(CGRect)rect inPager:(UIScrollView *)pager axes:(int)axes pagerOffset:(CGRect)inPager
+- (CGPoint)restingShiftInPager:(UIScrollView *)pager axes:(int)axes pagerOffset:(CGRect)inPager
 {
   const CGSize page = pager.bounds.size;
   const CGPoint offset = pager.contentOffset;
+  CGPoint shift = CGPointZero;
   if ((axes & GSAHorizontal) != 0 && page.width > 0) {
-    const CGFloat resting = floor(CGRectGetMidX(inPager) / page.width) * page.width;
-    rect.origin.x += offset.x - resting;
+    shift.x = offset.x - floor(CGRectGetMidX(inPager) / page.width) * page.width;
   }
   if ((axes & GSAVertical) != 0 && page.height > 0) {
-    const CGFloat resting = floor(CGRectGetMidY(inPager) / page.height) * page.height;
-    rect.origin.y += offset.y - resting;
+    shift.y = offset.y - floor(CGRectGetMidY(inPager) / page.height) * page.height;
   }
-  return rect;
+  return shift;
 }
 
 - (void)applyInsets:(UIEdgeInsets)insets

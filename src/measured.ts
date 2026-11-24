@@ -58,6 +58,8 @@ export type MeasuredSafeAreaOptions = GranularInsetsOptions & {
   style: StyleProp<ViewStyle>;
   onLayout?: (event: LayoutChangeEvent) => void;
   onInsetsChange?: (insets: EdgeInsets) => void;
+  /** `useSafeAreaStyle`'s probe: how far the insets moved the view it fills, taken out of what it measures. */
+  correction?: EdgeInsets;
 };
 
 export type MeasuredSafeArea = {
@@ -86,6 +88,7 @@ export function useMeasuredSafeArea({
   onLayout,
   onInsetsChange,
   accessory,
+  correction,
 }: MeasuredSafeAreaOptions): MeasuredSafeArea {
   const store = useGranularSafeAreaStore();
   const ref = useRef<HostInstance | null>(null);
@@ -97,9 +100,9 @@ export function useMeasuredSafeArea({
       ? layoutAdjustment(style, insets, 'margin', modes).added
       : ZERO_INSETS;
   // What the element shows right now, so its own adjustment can be taken out before measuring.
-  const applied = useRef({ insets, margins });
+  const applied = useRef({ insets, margins, correction });
   useLayoutEffect(() => {
-    applied.current = { insets, margins };
+    applied.current = { insets, margins, correction };
   });
   const lastMeasure = useRef<{
     rect: Rect;
@@ -138,6 +141,7 @@ export function useMeasuredSafeArea({
     let rect = measured;
     if (mode === 'offset') rect = removeOffset(rect, current.insets);
     if (mode === 'margin') rect = withoutMargins(rect, current.margins);
+    if (current.correction) rect = withoutMargins(rect, current.correction);
 
     const axes =
       scrollAxesOf(ref.current, store.getProviderNode()) ?? scroll ?? NO_SCROLL;

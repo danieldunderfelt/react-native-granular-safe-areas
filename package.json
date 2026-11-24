@@ -83,6 +83,7 @@
     "@react-native/eslint-config": "0.88.1",
     "@types/jest": "^30.0.0",
     "@types/react": "^19.2.0",
+    "@types/react-test-renderer": "^19.3.1",
     "del-cli": "^8.0.1",
     "eslint": "^9.39.5",
     "eslint-config-prettier": "^10.1.8",
@@ -96,14 +97,15 @@
     "react-native-reanimated": "4.7.1",
     "react-native-safe-area-context": "5.11.1",
     "react-native-worklets": "0.13.0",
+    "react-test-renderer": "19.3.0",
     "turbo": "^2.11.10",
     "typescript": "^6.0.3"
   },
   "peerDependencies": {
     "react": "*",
     "react-native": ">=0.82.0",
-    "react-native-safe-area-context": ">=5.11.0",
     "react-native-reanimated": ">=4.0.0",
+    "react-native-safe-area-context": ">=5.11.0",
     "react-native-worklets": ">=0.5.0"
   },
   "peerDependenciesMeta": {

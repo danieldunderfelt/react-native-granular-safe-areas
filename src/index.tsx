@@ -5,10 +5,15 @@ export * from 'react-native-safe-area-context';
 // A granular drop-in for react-native-safe-area-context's SafeAreaView, and app UI other views avoid.
 export {
   SafeAreaAccessory,
+  SafeAreaDefaults,
   SafeAreaView,
+  useSafeAreaStyle,
   useSafeAreaViewInsets,
   type SafeAreaAccessoryProps,
+  type SafeAreaDefaultsOptions,
+  type SafeAreaStyle,
   type SafeAreaViewProps,
+  type UseSafeAreaStyleOptions,
 } from './SafeAreaView';
 
 // Insets for a position you describe, the regions themselves, and the strip the system puts its controls in.
@@ -16,6 +21,7 @@ export {
   useSafeAreaInsetsFor,
   useSafeAreaRegions,
   useSystemControls,
+  useTabBarEdge,
   type SafeAreaInsetsForOptions,
 } from './hooks';
 
@@ -34,6 +40,10 @@ export {
   GranularSafeAreaProvider,
   type GranularSafeAreaProviderProps,
 } from './GranularSafeAreaProvider';
+export {
+  GranularSafeAreaDebugOverlay,
+  type GranularSafeAreaDebugOverlayProps,
+} from './GranularSafeAreaDebugOverlay';
 export { fixtures, type FixtureName } from './fixtures';
 
 export { refreshSafeAreas } from './refresh';

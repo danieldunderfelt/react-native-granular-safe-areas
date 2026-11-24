@@ -4,6 +4,7 @@ export {
   buildRegions,
   computeElementInsets,
   getSystemControls,
+  getTabBarEdge,
   metricsForSubrect,
   metricsFromInsets,
   placementToRect,

@@ -16,8 +16,24 @@ using namespace facebook::react;
 @interface GSAAnchorView () <RCTGranularSafeAreaAnchorViewProtocol, RCTMountingTransactionObserving>
 @end
 
+/// Whether the screen `anchor` is in is showing: in a window, and neither hidden nor fully transparent through any of its
+/// ancestors, which is how a screen can stay mounted while it isn't shown (`opacity: 0`, `display: 'none'`). The
+/// anchor itself is always transparent, so it doesn't count.
+static BOOL GSAIsShowing(UIView *anchor)
+{
+  if (anchor.window == nil || anchor.hidden) {
+    return NO;
+  }
+  for (UIView *view = anchor.superview; view != nil; view = view.superview) {
+    if (view.hidden || view.layer.hidden || view.layer.opacity < 0.01) {
+      return NO;
+    }
+  }
+  return YES;
+}
+
 @implementation GSAAnchorView {
-  /// What JS currently believes. JS assumes "in a window" until told otherwise, so the first frame is already right.
+  /// What JS currently believes. JS assumes "showing" until told otherwise, so the first frame is already right.
   BOOL _reportedInWindow;
   BOOL _checkScheduled;
 
@@ -85,7 +101,7 @@ using namespace facebook::react;
   [self layoutButton];
 }
 
-#pragma mark - Being in a window
+#pragma mark - Being shown
 
 - (void)didMoveToWindow
 {
@@ -111,6 +127,8 @@ using namespace facebook::react;
 - (void)mountingTransactionDidMount:(const MountingTransaction &)transaction
                withSurfaceTelemetry:(const SurfaceTelemetry &)surfaceTelemetry
 {
+  // Any transaction can hide or show the screen without moving it: an ancestor's opacity or display changed.
+  [self reportIfChanged];
   [self layoutButton];
 }
 
@@ -132,7 +150,7 @@ using namespace facebook::react;
 
 - (void)reportIfChanged
 {
-  BOOL inWindow = self.window != nil;
+  BOOL inWindow = GSAIsShowing(self);
   if (inWindow == _reportedInWindow || _eventEmitter == nullptr) {
     return;
   }

@@ -114,6 +114,14 @@ export function parseMetrics(json: string | null | undefined) {
     barItemsKnown: data.barItemsKnown === true,
     reservedRegionsSupported: data.reservedRegionsSupported === true,
   };
+  if (data.idiom === 'phone' || data.idiom === 'pad')
+    metrics.idiom = data.idiom;
+  if (
+    data.horizontalSizeClass === 'compact' ||
+    data.horizontalSizeClass === 'regular'
+  ) {
+    metrics.horizontalSizeClass = data.horizontalSizeClass;
+  }
   const windowControls = parseRect(data.windowControls);
   if (windowControls) metrics.windowControls = windowControls;
   const android = parseAndroid(data.android);

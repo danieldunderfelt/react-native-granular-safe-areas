@@ -334,6 +334,13 @@ NSDictionary *_Nullable GSAMetricsForView(UIView *view, GSAWindowBars *_Nullable
     @"reservedRegionsSupported" : @NO,
   } mutableCopy];
 
+  // Where UIKit puts a tab bar: at the top of an iPad window of regular width, at the bottom otherwise (or in the vertical
+  // bar, which `verticalBarEdge` tells).
+  UITraitCollection *traits = view.traitCollection;
+  metrics[@"idiom"] = traits.userInterfaceIdiom == UIUserInterfaceIdiomPad ? @"pad" : @"phone";
+  metrics[@"horizontalSizeClass"] =
+      traits.horizontalSizeClass == UIUserInterfaceSizeClassRegular ? @"regular" : @"compact";
+
   NSValue *statusBar = GSAStatusBarFrame(view);
   if (statusBar != nil) {
     metrics[@"statusBar"] = GSARect(statusBar.CGRectValue);

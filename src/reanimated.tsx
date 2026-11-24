@@ -13,6 +13,7 @@ import {
   ChildInsets,
   SafeAreaView,
   useNativeSafeArea,
+  useResolvedProps,
   type SafeAreaViewProps,
 } from './SafeAreaView';
 import type {
@@ -21,7 +22,7 @@ import type {
 } from './specs/GranularSafeAreaViewNativeComponent';
 
 type NativeInsetsHandler = NonNullable<NativeProps['onInsetsChange']>;
-import { layoutAdjustment } from './style';
+import { layoutAdjustment, ownEdges } from './style';
 import type { Edge, EdgeInsets, EdgeMode } from './types';
 
 export type AnimatedSafeAreaViewProps = SafeAreaViewProps & {
@@ -55,29 +56,32 @@ const AnimatedMeasuredView = Animated.createAnimatedComponent(SafeAreaView);
  * events, so the animation starts on the next frame without a trip through JavaScript. Elsewhere they come from JS.
  */
 export function AnimatedSafeAreaView(props: AnimatedSafeAreaViewProps) {
+  const resolved = useResolvedProps(props);
   return AnimatedNativeView ? (
-    <NativeAnimatedSafeAreaView {...props} />
+    <NativeAnimatedSafeAreaView {...resolved} />
   ) : (
-    <MeasuredAnimatedSafeAreaView {...props} />
+    <MeasuredAnimatedSafeAreaView {...resolved} />
   );
 }
 
-/** What the animated style needs from the view's own style: its padding on each edge, and its transform. */
+/**
+ * What the animated style needs from the view's own style: its padding on each edge and the key that sets it (`start`,
+ * `end` and right-to-left included), and its transform.
+ */
 function useOwnStyle(style: SafeAreaViewProps['style']) {
   return useMemo(() => {
     const flat: ViewStyle = StyleSheet.flatten(style) ?? {};
-    const padding = (side: keyof ViewStyle, axis: keyof ViewStyle) => {
-      const value = [flat[side], flat[axis], flat.padding].find(
-        (v) => v !== undefined
-      );
-      return typeof value === 'number' ? value : 0;
+    const own = ownEdges(flat, 'padding');
+    const side = (edge: Edge) => {
+      const { value, key } = own[edge];
+      return { value: typeof value === 'number' ? value : 0, key };
     };
     return {
       padding: {
-        top: padding('paddingTop', 'paddingVertical'),
-        right: padding('paddingRight', 'paddingHorizontal'),
-        bottom: padding('paddingBottom', 'paddingVertical'),
-        left: padding('paddingLeft', 'paddingHorizontal'),
+        top: side('top'),
+        right: side('right'),
+        bottom: side('bottom'),
+        left: side('left'),
       },
       transform: Array.isArray(flat.transform) ? flat.transform : [],
     };
@@ -107,17 +111,12 @@ function useInsetsStyle(
     }
     if (mode === 'padding' || mode === undefined) {
       const out: Record<string, number> = {};
-      const sides = [
-        ['top', 'paddingTop'],
-        ['right', 'paddingRight'],
-        ['bottom', 'paddingBottom'],
-        ['left', 'paddingLeft'],
-      ] as const;
-      for (const [edge, property] of sides) {
+      const edges = ['top', 'right', 'bottom', 'left'] as const;
+      for (const edge of edges) {
         const edgeMode = modes[edge];
         if (edgeMode === 'off') continue;
-        const base = own.padding[edge];
-        out[property] = animate(
+        const { value: base, key } = own.padding[edge];
+        out[key] = animate(
           edgeMode === 'maximum'
             ? Math.max(base, current[edge])
             : base + current[edge]

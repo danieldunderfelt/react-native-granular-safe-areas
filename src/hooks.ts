@@ -9,6 +9,7 @@ import {
   activeEdges,
   DEFAULT_AVOID,
   edgeModes,
+  getTabBarEdge,
   insetsEqual,
   placementToRect,
   safeAreaViewInsets,
@@ -17,7 +18,7 @@ import {
   type SystemControls,
 } from './geometry';
 import { getDefaultStore } from './defaultStore';
-import { GranularSafeAreaContext } from './GranularSafeAreaProvider';
+import { GranularSafeAreaContext } from './context';
 import type { GranularSafeAreaStore } from './store';
 import type {
   Edge,
@@ -56,6 +57,22 @@ export function useSystemControls(): SystemControls | null {
   return useSyncExternalStore(
     store.subscribe,
     () => store.getSnapshot().systemControls
+  );
+}
+
+/**
+ * The edge the system puts a tab bar on here, whether or not the app shows one: on the iPhone Duo (closed, or open in
+ * landscape) the edge with the vertical bar, on an iPad window of regular width the top, and the bottom everywhere
+ * else. For a tab bar of your own that should sit where the system's would, or to know which way is "past the tab bar".
+ * Re-renders when it changes, such as when the Duo opens.
+ *
+ * To keep floating UI clear of whichever tab bar there is, you don't need it: a `granular` `SafeAreaView` already
+ * avoids UIKit's tab bar wherever it is, and your own if it's a `SafeAreaAccessory`.
+ */
+export function useTabBarEdge(): Edge {
+  const store = useGranularSafeAreaStore();
+  return useSyncExternalStore(store.subscribe, () =>
+    getTabBarEdge(store.getSnapshot().metrics)
   );
 }
 

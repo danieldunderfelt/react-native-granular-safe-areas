@@ -167,6 +167,8 @@ const iPhone18ProPortrait: GranularSafeAreaMetrics = {
  * status bar then, not over the app, so the insets stay whole bands. Recorded on the iPad simulator (iOS 27.0).
  */
 const iPadProFullScreen: GranularSafeAreaMetrics = {
+  idiom: 'pad',
+  horizontalSizeClass: 'regular',
   ...base,
   width: 834,
   height: 1210,
@@ -182,6 +184,8 @@ const iPadProFullScreen: GranularSafeAreaMetrics = {
  * the iPad simulator (iOS 27.0).
  */
 const iPadProWindow: GranularSafeAreaMetrics = {
+  idiom: 'pad',
+  horizontalSizeClass: 'compact',
   ...base,
   width: 375,
   height: 617,

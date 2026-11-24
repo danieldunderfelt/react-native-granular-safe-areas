@@ -1,5 +1,6 @@
 package com.granularsafeareas
 
+import android.graphics.PointF
 import android.graphics.RectF
 import android.view.View
 import android.view.ViewTreeObserver
@@ -277,28 +278,56 @@ class GSASafeAreaView(context: ThemedReactContext) : ReactViewGroup(context) {
     if (!GSAViews.mapTo(rect, parent, space, laidOut)) return
 
     // Where the view can be seen: inside the provider and every clipping ancestor. And the scroll views around it.
-    val visible = RectF(0f, 0f, space.width.toFloat(), space.height.toFloat())
+    //
+    // A static view's position along a scroll axis isn't fixed, and neither is that of a clip that scrolls along with
+    // it (a list row, a rounded card). Such a clip is stretched along the axis, so only the scroll view's own bounds
+    // count there: otherwise a row would only avoid what's beside wherever it was last laid out. In a pager, the view
+    // and the clips that page with it are measured where the page comes to rest. A dynamic view follows what's on
+    // screen, so it takes every clip where it is right now.
+    val spaceWidth = space.width.toFloat()
+    val spaceHeight = space.height.toFloat()
+    // The clips met so far, `null` while there are none; empty once they leave nothing.
+    var clip: RectF? = null
     var axes = 0
     var ancestor: View? = parent
     while (ancestor != null && ancestor !== space) {
-      if (GSAViews.clips(ancestor)) {
-        val clip = RectF(0f, 0f, ancestor.width.toFloat(), ancestor.height.toFloat())
-        if (GSAViews.mapTo(clip, ancestor, space, laidOut) && !visible.intersect(clip)) {
-          visible.setEmpty()
-        }
-      }
       val scrollAxes = GSAViews.scrollAxes(ancestor)
       if (scrollAxes != 0) {
         if (GSAViews.pagingEnabled(ancestor)) {
           // A pager's content comes to rest on a page, so it's measured where it will rest, like content that doesn't
           // scroll. A dynamic view follows it as it moves instead.
-          if (!dynamic) restInPager(rect, parent, ancestor, scrollAxes)
+          if (!dynamic) {
+            val shift = restingShift(parent, ancestor, scrollAxes)
+            rect.offset(shift.x, shift.y)
+            clip?.takeUnless { it.isEmpty }?.offset(shift.x, shift.y)
+          }
         } else {
           axes = axes or scrollAxes
+          val current = clip
+          if (!dynamic && current != null && !current.isEmpty) {
+            if (scrollAxes and GSAViews.VERTICAL != 0) {
+              current.top = 0f
+              current.bottom = spaceHeight
+            }
+            if (scrollAxes and GSAViews.HORIZONTAL != 0) {
+              current.left = 0f
+              current.right = spaceWidth
+            }
+          }
+        }
+      }
+      if (GSAViews.clips(ancestor)) {
+        val bounds = RectF(0f, 0f, ancestor.width.toFloat(), ancestor.height.toFloat())
+        if (GSAViews.mapTo(bounds, ancestor, space, laidOut)) {
+          val current = clip
+          if (current == null) clip = bounds
+          else if (!current.intersect(bounds)) current.setEmpty()
         }
       }
       ancestor = ancestor.parent as? View
     }
+    val visible = RectF(0f, 0f, spaceWidth, spaceHeight)
+    clip?.let { if (!visible.intersect(it)) visible.setEmpty() }
 
     // A position along a scroll axis isn't fixed, so a view that doesn't follow it has to avoid whole bands, measured
     // as if it covered all of the scroll view it can be seen in. Regions on the edges it scrolls towards are the
@@ -332,8 +361,9 @@ class GSASafeAreaView(context: ThemedReactContext) : ReactViewGroup(context) {
     }
   }
 
-  /** Moves `rect` to where it will be once `pager` comes to rest on the page that holds the view's center. */
-  private fun restInPager(rect: RectF, parent: View, pager: View, axes: Int) {
+  /** How far the view moves once `pager` comes to rest on the page that holds the view's center. */
+  private fun restingShift(parent: View, pager: View, axes: Int): PointF {
+    val shift = PointF()
     val inPager =
         RectF(
             left.toFloat() - parent.scrollX,
@@ -341,17 +371,18 @@ class GSASafeAreaView(context: ThemedReactContext) : ReactViewGroup(context) {
             right.toFloat() - parent.scrollX,
             bottom.toFloat() - parent.scrollY,
         )
-    if (!GSAViews.mapUp(inPager, parent, pager, laidOut = true)) return
+    if (!GSAViews.mapUp(inPager, parent, pager, laidOut = true)) return shift
     // In the pager's content, where its pages are.
     inPager.offset(pager.scrollX.toFloat(), pager.scrollY.toFloat())
     if (axes and GSAViews.HORIZONTAL != 0 && pager.width > 0) {
       val page = pager.width.toFloat()
-      rect.offset(pager.scrollX - floor(inPager.centerX() / page) * page, 0f)
+      shift.x = pager.scrollX - floor(inPager.centerX() / page) * page
     }
     if (axes and GSAViews.VERTICAL != 0 && pager.height > 0) {
       val page = pager.height.toFloat()
-      rect.offset(0f, pager.scrollY - floor(inPager.centerY() / page) * page)
+      shift.y = pager.scrollY - floor(inPager.centerY() / page) * page
     }
+    return shift
   }
 
   /**

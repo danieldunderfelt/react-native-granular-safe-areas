@@ -8,14 +8,18 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type ReactElement,
   type ReactNode,
   type Ref,
 } from 'react';
 import {
+  StyleSheet,
   View,
   type HostInstance,
   type NativeSyntheticEvent,
+  type StyleProp,
   type ViewProps,
+  type ViewStyle,
 } from 'react-native';
 import {
   activeEdges,
@@ -43,7 +47,12 @@ import type {
   InsetsChangeEvent,
 } from './specs/GranularSafeAreaViewNativeComponent';
 import type { GranularSafeAreaStore } from './store';
-import { layoutAdjustment } from './style';
+import {
+  mergeDefaults,
+  resolveSafeAreaProps,
+  type SafeAreaDefaultsOptions,
+} from './resolveProps';
+import { layoutAdjustment, offsetStyle } from './style';
 import type {
   Edge,
   EdgeInsets,
@@ -66,6 +75,15 @@ export type SafeAreaViewProps = ViewProps &
     edges?: Edges;
     /** How the insets are applied: `padding` (default), `margin`, `offset` or `none`. */
     mode?: GranularSafeAreaMode;
+    /**
+     * Keep the content at least this far from what it avoids, wherever the padding lives. On each edge the view gets
+     * the larger of its own padding (or margin) and the overlap plus `gap`, so the content ends up `gap` from the OS
+     * UI whether the view or its parent owns the padding, and a view clear of everything keeps its own padding.
+     *
+     * It's `spacing` with every additive edge made `'maximum'`. Prefer it to `spacing` for views with padding of their
+     * own. Defaults to none.
+     */
+    gap?: number;
     /**
      * Follow the view as it moves, and avoid only the regions it overlaps right now: a badge on a scrolling card
      * moves in while it passes the OS UI. Movement is a design decision, so it's opt-in. Implies `granular`.
@@ -110,7 +128,7 @@ export type SafeAreaAccessoryProps = SafeAreaViewProps & {
  * `useSafeAreaViewInsets`.
  */
 export function SafeAreaView(props: SafeAreaViewProps) {
-  return <SafeAreaViewImpl {...props} />;
+  return <SafeAreaViewImpl {...useResolvedProps(props)} />;
 }
 
 /**
@@ -127,7 +145,53 @@ export function SafeAreaView(props: SafeAreaViewProps) {
 export function SafeAreaAccessory({ edge, ...props }: SafeAreaAccessoryProps) {
   const [owner] = useState(createOwnerId);
   const accessory = useMemo(() => ({ owner, edge }), [owner, edge]);
-  return <SafeAreaViewImpl {...props} accessory={accessory} />;
+  return (
+    <SafeAreaViewImpl {...useResolvedProps(props)} accessory={accessory} />
+  );
+}
+
+const SafeAreaDefaultsContext = createContext<SafeAreaDefaultsOptions>({});
+SafeAreaDefaultsContext.displayName = 'SafeAreaDefaultsContext';
+
+/**
+ * Defaults for every `SafeAreaView`, `SafeAreaAccessory`, `AnimatedSafeAreaView` and `useSafeAreaStyle` inside it. A
+ * view's own props win; nested defaults add to the ones around them. It only sets props: it measures nothing and isn't
+ * a provider.
+ *
+ * ```tsx
+ * // Adopting in an app that already handles the top and bottom with useSafeAreaInsets(): only the side columns.
+ * <SafeAreaDefaults edges={['left', 'right']} granular>
+ *   <App />
+ * </SafeAreaDefaults>
+ * ```
+ */
+export function SafeAreaDefaults({
+  children,
+  ...defaults
+}: SafeAreaDefaultsOptions & { children?: ReactNode }) {
+  const parent = useContext(SafeAreaDefaultsContext);
+  const key = JSON.stringify(defaults);
+  const value = useMemo(
+    () => mergeDefaults(parent, defaults),
+    // `key` stands for `defaults`, which is a new object on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [parent, key]
+  );
+  return (
+    <SafeAreaDefaultsContext.Provider value={value}>
+      {children}
+    </SafeAreaDefaultsContext.Provider>
+  );
+}
+
+/**
+ * The props a view goes by: its own, then the nearest `SafeAreaDefaults`, with `gap` turned into what it means
+ * (`spacing`, and `'maximum'` for every additive edge).
+ */
+export function useResolvedProps<P extends SafeAreaDefaultsOptions>(
+  props: P
+): Omit<P, 'gap'> {
+  return resolveSafeAreaProps(props, useContext(SafeAreaDefaultsContext));
 }
 
 const SafeAreaViewInsetsContext = createContext<EdgeInsets>(ZERO_INSETS);
@@ -151,7 +215,16 @@ export function useSafeAreaViewInsets(): EdgeInsets {
   return useContext(SafeAreaViewInsetsContext);
 }
 
-export type ImplProps = SafeAreaViewProps & { accessory?: AccessoryOptions };
+export type { SafeAreaDefaultsOptions };
+
+export type ImplProps = SafeAreaViewProps & {
+  accessory?: AccessoryOptions;
+  /**
+   * `useSafeAreaStyle`'s probe: what to take out of its measurement, as margins, because the insets moved the view it
+   * fills (`margin`, or `offset` where it's measured as drawn).
+   */
+  correction?: EdgeInsets;
+};
 
 function SafeAreaViewImpl(props: ImplProps) {
   return NativeSafeAreaView ? (
@@ -370,6 +443,7 @@ function NativeBackedSafeAreaView({
   underlying,
   onInsetsChange,
   accessory,
+  correction,
   style,
   children,
   ref,
@@ -408,7 +482,11 @@ function NativeBackedSafeAreaView({
       {...native.props}
       applyOffset={mode === 'offset'}
       reportInsets={reported || onInsetsChange !== undefined}
-      margins={mode === 'margin' ? adjustment?.added : ZERO_INSETS}
+      margins={
+        correction ??
+        (mode === 'margin' ? adjustment?.added : undefined) ??
+        ZERO_INSETS
+      }
       onInsetsChange={handleInsetsChange}
       style={adjustment?.style ? [style, adjustment.style] : style}
     >
@@ -430,6 +508,7 @@ function MeasuredSafeAreaView({
   underlying = false,
   onInsetsChange,
   accessory,
+  correction,
   style,
   onLayout,
   children,
@@ -453,6 +532,7 @@ function MeasuredSafeAreaView({
     onLayout,
     onInsetsChange,
     accessory,
+    correction,
   });
   const setRef = useMergedRef(measured.ref, forwardedRef);
   return (
@@ -499,3 +579,117 @@ function useMergedRef(
     [own, forwarded]
   );
 }
+
+export type UseSafeAreaStyleOptions = Pick<
+  SafeAreaViewProps,
+  | 'edges'
+  | 'mode'
+  | 'granular'
+  | 'dynamic'
+  | 'avoid'
+  | 'spacing'
+  | 'gap'
+  | 'underlying'
+  | 'onInsetsChange'
+> & {
+  /**
+   * The component's own style, so `additive` and `maximum` edges can build on its padding or margin, and `offset` on
+   * its transform. Leave out what changes with state (`pressed`) unless it changes those.
+   */
+  style?: StyleProp<ViewStyle>;
+};
+
+export type SafeAreaStyle = {
+  /** Put this after the component's own style: the padding, margin or transform that applies the insets. */
+  style: ViewStyle | null;
+  /** The insets, once measured. Zero until then, and wherever nothing needs avoiding. */
+  insets: EdgeInsets;
+  /**
+   * Render this as a child of the component's root. It's an invisible view that fills the root (absolutely
+   * positioned, so it takes no part in layout) and measures it, the way a `SafeAreaView` measures itself.
+   */
+  probe: ReactElement;
+};
+
+/**
+ * `SafeAreaView` for a component whose root you don't control, such as a `Pressable`, where a wrapper view would break
+ * the layout (`flex: 1`, stretching, alignment). Render `probe` inside the root and add `style` to it:
+ *
+ * ```tsx
+ * function Button({ style, children, ...props }: ButtonProps) {
+ *   const safeArea = useSafeAreaStyle({ edges: ['left', 'right'], granular: true, style: styles.button });
+ *   return (
+ *     <Pressable {...props} style={(state) => [styles.button, resolve(style, state), safeArea.style]}>
+ *       {safeArea.probe}
+ *       {children}
+ *     </Pressable>
+ *   );
+ * }
+ * ```
+ *
+ * It takes `SafeAreaView`'s options and measures natively the same way: scroll views, clipping, what's drawn on top,
+ * transitions. The root's border isn't part of what's measured.
+ */
+export function useSafeAreaStyle(
+  options: UseSafeAreaStyleOptions = {}
+): SafeAreaStyle {
+  const {
+    mode = 'padding',
+    style,
+    onInsetsChange,
+    ...measure
+  } = useResolvedProps(options);
+  const modes = useEdgeModes(measure.edges);
+  const [insets, setInsets] = useState<EdgeInsets>(ZERO_INSETS);
+  const onInsetsChangeRef = useRef(onInsetsChange);
+  useLayoutEffect(() => {
+    onInsetsChangeRef.current = onInsetsChange;
+  });
+  const handleInsets = useCallback((next: EdgeInsets) => {
+    setInsets((previous) => (insetsEqual(previous, next) ? previous : next));
+    onInsetsChangeRef.current?.(next);
+  }, []);
+
+  const adjustment =
+    mode === 'padding' || mode === 'margin'
+      ? layoutAdjustment(style, insets, mode, modes)
+      : null;
+  const offset = mode === 'offset' ? offsetStyle(style, insets) : null;
+  // The probe sits in the root, so whatever moves the root moves it. Margin always does; offset only where the probe
+  // is measured as drawn (a dynamic view, or measured from JS), since a static native view leaves transforms out.
+  const dx = insets.left - insets.right;
+  const dy = insets.top - insets.bottom;
+  const correction =
+    mode === 'margin'
+      ? adjustment!.added
+      : mode === 'offset' && (measure.dynamic || !NativeSafeAreaView)
+        ? { top: dy, right: -dx, bottom: -dy, left: dx }
+        : ZERO_INSETS;
+  const correctionKey = EDGES.map((edge) => correction[edge]).join(',');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const stableCorrection = useMemo(() => correction, [correctionKey]);
+
+  const probe = (
+    <SafeAreaViewImpl
+      {...measure}
+      edges={modes}
+      mode="none"
+      correction={stableCorrection}
+      onInsetsChange={handleInsets}
+      pointerEvents="none"
+      accessible={false}
+      importantForAccessibility="no-hide-descendants"
+      accessibilityElementsHidden
+      style={styles.probe}
+    />
+  );
+  return {
+    style: adjustment?.style ?? offset ?? null,
+    insets,
+    probe,
+  };
+}
+
+const styles = StyleSheet.create({
+  probe: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 },
+});

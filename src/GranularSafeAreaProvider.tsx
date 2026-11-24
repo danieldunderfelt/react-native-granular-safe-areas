@@ -1,5 +1,4 @@
 import {
-  createContext,
   useCallback,
   useContext,
   useEffect,
@@ -37,15 +36,13 @@ import {
   refreshNativeProvider,
 } from './nativeBridge';
 import { GranularSafeAreaDebugOverlay } from './GranularSafeAreaDebugOverlay';
+import { GranularSafeAreaContext } from './context';
 import { registerStore } from './refresh';
 import type { MetricsChangeEvent } from './specs/GranularSafeAreaProviderViewNativeComponent';
 import { GranularSafeAreaStore } from './store';
 import type { GranularSafeAreaMetrics, Rect } from './types';
 
-/** Holds the nearest provider's store. The value never changes, so it never re-renders consumers by itself. */
-export const GranularSafeAreaContext =
-  createContext<GranularSafeAreaStore | null>(null);
-GranularSafeAreaContext.displayName = 'GranularSafeAreaContext';
+export { GranularSafeAreaContext };
 
 export type GranularSafeAreaProviderProps = ViewProps & {
   children?: ReactNode;
