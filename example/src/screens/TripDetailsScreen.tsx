@@ -3,21 +3,28 @@ import {
   useRoute,
   type RouteProp,
 } from '@react-navigation/native';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  Alert,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import {
   SafeAreaView,
   useSafeAreaInsets,
-  SystemBackButton,
 } from 'react-native-granular-safe-areas';
+import { useSystemHeaderItems } from 'react-native-granular-safe-areas/native-stack';
 import { LightStatusBar } from '../components/LightStatusBar';
 import type { RootStackParamList } from '../navigation';
 import { useAvoid } from '../settings';
 import { TRIPS } from '../trips';
 
 /**
- * A full-bleed detail screen without a navigation bar: a hero picture with floating buttons over it. The floating
- * back button becomes the vertical bar's back button on the iPhone Duo, and the share button moves in next to the
- * status cluster.
+ * A full-bleed detail screen without a navigation bar: a hero picture with floating buttons over it. On the iPhone Duo
+ * the system draws the back and share buttons in the vertical bar instead, as Liquid Glass, through a transparent,
+ * empty native header (`useSystemHeaderItems`). Everywhere else the floating buttons show.
  */
 export function TripDetailsScreen() {
   const navigation = useNavigation();
@@ -27,6 +34,17 @@ export function TripDetailsScreen() {
   const { top } = useSafeAreaInsets();
   // On the Duo the top inset is 0, but the display's corners are round: keep the buttons clear of them.
   const buttonTop = Math.max(top + 8, 24);
+  const share = () => Alert.alert(`Share ${trip.route}`);
+  const { shown } = useSystemHeaderItems({
+    headerRightItems: [
+      {
+        type: 'button',
+        label: 'Share',
+        icon: { type: 'sfSymbol', name: 'square.and.arrow.up' },
+        onPress: share,
+      },
+    ],
+  });
 
   return (
     <View style={styles.screen}>
@@ -58,27 +76,30 @@ export function TripDetailsScreen() {
         </SafeAreaView>
       </ScrollView>
 
-      <SystemBackButton onPress={() => navigation.goBack()}>
-        <Pressable
-          accessibilityLabel="Back"
-          onPress={() => navigation.goBack()}
-          style={[styles.floating, styles.back, { top: buttonTop }]}
-        >
-          <Text style={styles.floatingText}>‹</Text>
-        </Pressable>
-      </SystemBackButton>
-
-      {/* Moved in next to the status cluster on the Duo; stays in the corner elsewhere. */}
-      <SafeAreaView
-        granular
-        mode="offset"
-        edges={['right']}
-        spacing={8}
-        avoid={avoid}
-        style={[styles.floating, styles.share, { top: buttonTop }]}
-      >
-        <Text style={styles.floatingText}>⇪</Text>
-      </SafeAreaView>
+      {/* Where the system shows its own buttons, these give way. */}
+      {shown ? null : (
+        <>
+          <Pressable
+            accessibilityLabel="Back"
+            onPress={() => navigation.goBack()}
+            style={[styles.floating, styles.back, { top: buttonTop }]}
+          >
+            <Text style={styles.floatingText}>‹</Text>
+          </Pressable>
+          <SafeAreaView
+            granular
+            mode="offset"
+            edges={['right']}
+            spacing={8}
+            avoid={avoid}
+            style={[styles.floating, styles.share, { top: buttonTop }]}
+          >
+            <Pressable accessibilityLabel="Share" onPress={share}>
+              <Text style={styles.floatingText}>⇪</Text>
+            </Pressable>
+          </SafeAreaView>
+        </>
+      )}
 
       <SafeAreaView
         granular

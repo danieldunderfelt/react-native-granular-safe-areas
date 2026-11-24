@@ -456,6 +456,59 @@ return (
 );
 ```
 
+### Header buttons drawn by the system
+
+A screen with a native header gets its back button and header items in the system's controls; on the iPhone Duo,
+UIKit draws them in the vertical bar as Liquid Glass. A screen with a header of its own (`headerShown: false`) gets
+none of that. `useSystemHeaderItems` gives it back, through the same native path: where the system has a place for its
+controls, the screen gets a native header that is transparent and empty, with your items, and UIKit takes the back
+button and the items out of it into the vertical bar. Your app never positions a button.
+
+```tsx
+// React Navigation's native stack
+import { useSystemHeaderItems } from 'react-native-granular-safe-areas/native-stack';
+// Expo Router's Stack
+import { useSystemHeaderItems } from 'react-native-granular-safe-areas/expo-router';
+
+function TripDetails() {
+  const { shown } = useSystemHeaderItems({
+    headerRightItems: [
+      { type: 'button', label: 'Share', icon: { type: 'sfSymbol', name: 'square.and.arrow.up' }, onPress: share },
+    ],
+  });
+  return (
+    <>
+      <Hero />
+      {shown ? null : <FloatingButtons />}
+    </>
+  );
+}
+```
+
+- **Where the system has a place for them** (the iPhone Duo closed, or open in landscape): UIKit's back button, and
+  your items below it, in the vertical bar. Touches go through the empty header, and your own header still reaches the
+  top. `shown` is `true`: hide your own back button and header buttons.
+- **Everywhere else** the screen gets `fallback`, `{ headerShown: false }` by default, and your header shows its own
+  buttons. It switches when the system UI changes, such as when the Duo opens.
+
+The items are those of `unstable_headerRightItems` (and `headerLeftItems` for `unstable_headerLeftItems`): buttons,
+menus, spacing, SF Symbols, badges. Inline items and handlers are fine: the header is only set again when what it
+shows changes, and handlers always call the latest code. The back button pops the screen natively; intercept it with
+`usePreventRemove`. Set `headerBackVisible: false` to leave it out.
+
+| Option | Default | |
+| --- | --- | --- |
+| `headerRightItems`, `headerLeftItems` | | The items, as for `unstable_headerRightItems` and `unstable_headerLeftItems` |
+| `headerBackVisible` | `true` | Show UIKit's back button where there's a screen to go back to |
+| `fallback` | `{ headerShown: false }` | The screen's header options where the system has no place for its controls |
+| `enabled` | `true` | `false` always uses `fallback` |
+| `navigation` | the screen's | The navigation object to set the options on |
+
+It sets the screen's header options, so don't set the same ones elsewhere for that screen (`navigation.setOptions`,
+`<Stack.Screen options>`); put them in `fallback`. It needs a native-stack version with `unstable_headerRightItems`.
+Expo Router has its own copy of React Navigation, so its screens need the `/expo-router` entry; the `/native-stack`
+one only finds React Navigation's. On screens that use it, `SystemBackButton` isn't needed.
+
 ### Options
 
 | Option | Default | |
@@ -550,6 +603,8 @@ safe-area-context's own mock, which it re-exports:
 // jest.setup.ts
 jest.mock('react-native-granular-safe-areas', () => require('react-native-granular-safe-areas/jest'));
 jest.mock('react-native-safe-area-context', () => require('react-native-safe-area-context/jest/mock').default);
+// If you use useSystemHeaderItems:
+jest.mock('react-native-granular-safe-areas/native-stack', () => require('react-native-granular-safe-areas/jest'));
 ```
 
 By default it's a device with nothing to avoid. To test a layout such as the iPhone Duo's, give it one of `fixtures`,
@@ -571,7 +626,8 @@ afterEach(() => mockSafeAreaMetrics(null));
 ```
 
 The hooks then return what they would on that device: `useSystemControls`, `useSafeAreaRegions`, `useTabBarEdge`,
-`useSafeAreaInsetsFor`. `SystemBackButton` hides your button where the system would show its own, and renders a
+`useSafeAreaInsetsFor`, and `useSystemHeaderItems` (map `react-native-granular-safe-areas/native-stack` or
+`/expo-router` to the mock too). `SystemBackButton` hides your button where the system would show its own, and renders a
 pressable stand-in with the test ID `SystemBackButton` that calls the `onPress` of the screen that would get it, so
 `fireEvent.press(screen.getByTestId('SystemBackButton'))` works. Views stay plain `View`s: nothing is laid out in
 Jest, so there's nothing for them to measure.
@@ -663,7 +719,8 @@ The example has:
   that spring in, a boarding pass bar as an accessory, a manual header and the system back button
 - a JS bottom sheet, a native form sheet and a full-screen modal, opened from the trip screen: each overlay's footer
   only keeps clear of what covers it
-- a trip details screen with a floating back button over a hero picture, which becomes the Duo's back button
+- a trip details screen with floating back and share buttons over a hero picture; on the Duo, UIKit draws them in
+  the vertical bar instead, through `useSystemHeaderItems`
 - a settings list: rounded rows that clip themselves, kept in line with `gap`, and a button whose root is a
   `Pressable`, using `useSafeAreaStyle`
 - the same trip screen inside native tabs

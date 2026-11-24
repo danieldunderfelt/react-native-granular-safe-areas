@@ -19,6 +19,15 @@ import {
   useTabBarEdge,
 } from '../jest';
 
+// react-test-renderer is deprecated, but it's the lightest way to run hooks in Jest here.
+const consoleError = console.error;
+beforeAll(() => {
+  jest.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+    if (String(args[0]).includes('react-test-renderer is deprecated')) return;
+    consoleError(...args);
+  });
+});
+
 (
   globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;

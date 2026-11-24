@@ -25,6 +25,16 @@
       "types": "./lib/typescript/src/jest.d.ts",
       "default": "./lib/module/jest.js"
     },
+    "./native-stack": {
+      "react-native-granular-safe-areas-source": "./src/native-stack.ts",
+      "types": "./lib/typescript/src/native-stack.d.ts",
+      "default": "./lib/module/native-stack.js"
+    },
+    "./expo-router": {
+      "react-native-granular-safe-areas-source": "./src/expo-router.ts",
+      "types": "./lib/typescript/src/expo-router.d.ts",
+      "default": "./lib/module/expo-router.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
@@ -81,6 +91,8 @@
     "@eslint/js": "^9.39.5",
     "@react-native/babel-preset": "0.88.1",
     "@react-native/eslint-config": "0.88.1",
+    "@react-navigation/native": "^7.5.2",
+    "@react-navigation/native-stack": "^7.21.1",
     "@types/jest": "^30.0.0",
     "@types/react": "^19.2.0",
     "@types/react-test-renderer": "^19.3.1",
@@ -89,6 +101,7 @@
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-ft-flow": "^3.0.11",
     "eslint-plugin-prettier": "^5.5.7",
+    "expo-router": "58.0.32",
     "jest": "^30.5.2",
     "prettier": "^3.9.10",
     "react": "19.3.0",
@@ -106,13 +119,25 @@
     "react-native": ">=0.82.0",
     "react-native-reanimated": ">=4.0.0",
     "react-native-safe-area-context": ">=5.11.0",
-    "react-native-worklets": ">=0.5.0"
+    "react-native-worklets": ">=0.5.0",
+    "@react-navigation/native": ">=7.0.0",
+    "@react-navigation/native-stack": ">=7.0.0",
+    "expo-router": "*"
   },
   "peerDependenciesMeta": {
     "react-native-reanimated": {
       "optional": true
     },
     "react-native-worklets": {
+      "optional": true
+    },
+    "@react-navigation/native": {
+      "optional": true
+    },
+    "@react-navigation/native-stack": {
+      "optional": true
+    },
+    "expo-router": {
       "optional": true
     }
   },

@@ -6,6 +6,8 @@ Everything the package exports, by entry point. The [README](../README.md) expla
 | --- | --- |
 | `react-native-granular-safe-areas` | Apps: components, hooks, and everything from react-native-safe-area-context |
 | `react-native-granular-safe-areas/reanimated` | `AnimatedSafeAreaView`. Needs `react-native-reanimated` 4 and `react-native-worklets` |
+| `react-native-granular-safe-areas/native-stack` | `useSystemHeaderItems` for React Navigation's native stack |
+| `react-native-granular-safe-areas/expo-router` | `useSystemHeaderItems` for Expo Router's `Stack` |
 | `react-native-granular-safe-areas/jest` | A stand-in for the main entry in Jest tests |
 | `react-native-granular-safe-areas/testing` | The geometry, metrics and store behind the components, for tests and tools |
 
@@ -182,12 +184,34 @@ Takes the props of `SafeAreaView`, with Reanimated's animated styles, plus:
 | `transition` | `(toValue: number) => number` | A worklet returning the animation to each new inset: `(to) => { 'worklet'; return withSpring(to); }`. For `offset` and `padding`; `margin` changes without animating |
 | `insets` | `SharedValue<EdgeInsets>` | A shared value the view writes its insets to on the UI thread. Use with `mode="none"` |
 
+## `/native-stack` and `/expo-router`
+
+### `useSystemHeaderItems(options?): { shown: boolean }`
+
+Header buttons drawn by the system for a screen with a header of its own. Where the system has a place for its
+controls (the iPhone Duo closed, or open in landscape), the screen gets a transparent, empty native header with the
+items, and UIKit draws its back button and the items in the vertical bar; `shown` is `true`. Elsewhere it gets
+`fallback`.
+
+| Option | Type | Default | |
+| --- | --- | --- | --- |
+| `headerRightItems` | `NativeStackHeaderItem[]` | | As for `unstable_headerRightItems` |
+| `headerLeftItems` | `NativeStackHeaderItem[]` | | As for `unstable_headerLeftItems` |
+| `headerBackVisible` | `boolean` | `true` | Show UIKit's back button |
+| `fallback` | `Partial<NativeStackNavigationOptions>` | `{ headerShown: false }` | Header options where the system has no place for its controls |
+| `enabled` | `boolean` | `true` | `false` always uses `fallback` |
+| `navigation` | `{ setOptions(options): void }` | the screen's | Where the options go |
+
+`/native-stack` uses `useNavigation` and the types from `@react-navigation/native` and `@react-navigation/native-stack`;
+`/expo-router` uses Expo Router's, which has its own copy of React Navigation. Both are optional peer dependencies.
+
 ## `/jest`
 
 The main entry's exports for Jest. `SafeAreaView` and `SafeAreaAccessory` render a `View`, `useSafeAreaViewInsets` and
 `useSafeAreaStyle` give zero insets. By default there's nothing to avoid; with `<GranularSafeAreaProvider mock={...}>`
 or `mockSafeAreaMetrics(metrics | null)`, the hooks compute what they would on that device (`useSafeAreaRegions`,
-`useSystemControls`, `useSafeAreaInsetsFor`, `useTabBarEdge`), and `SystemBackButton` shows a pressable stand-in with
+`useSystemControls`, `useSafeAreaInsetsFor`, `useTabBarEdge`, `useSystemHeaderItems`, which leaves the screen's
+options alone), and `SystemBackButton` shows a pressable stand-in with
 the test ID `SystemBackButton` where the system would show its button. react-native-safe-area-context comes through as
 is, so mock it too:
 

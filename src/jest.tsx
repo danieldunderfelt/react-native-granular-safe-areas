@@ -33,6 +33,7 @@ import {
   buildRegions,
   edgeModes,
   getTabBarEdge,
+  getVerticalBar,
   placementToRect,
   safeAreaViewInsets,
   ZERO_INSETS,
@@ -320,6 +321,21 @@ export function GranularSafeAreaProvider({
   return (
     <StoreContext.Provider value={store}>{children}</StoreContext.Provider>
   );
+}
+
+/**
+ * `useSystemHeaderItems` from `/native-stack` and `/expo-router`: `shown` where the mocked metrics have a vertical bar.
+ * It leaves the screen's options alone. Map those entries here too:
+ *
+ *   jest.mock('react-native-granular-safe-areas/native-stack', () => require('react-native-granular-safe-areas/jest'));
+ */
+export function useSystemHeaderItems({
+  enabled = true,
+}: { enabled?: boolean } = {}): { shown: boolean } {
+  const { metrics } = useSnapshot();
+  return {
+    shown: enabled && metrics !== null && getVerticalBar(metrics) !== null,
+  };
 }
 
 export function GranularSafeAreaDebugOverlay() {
