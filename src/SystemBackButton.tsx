@@ -10,7 +10,7 @@ import {
 import { StyleSheet, View } from 'react-native';
 import { useGranularSafeAreaStore } from './hooks';
 import { AnchorView } from './nativeBridge';
-import type { BackButtonIcon } from './store';
+import { backButtonSystemImage, type BackButtonIcon } from './store';
 
 export type SystemBackButtonIcon = BackButtonIcon;
 
@@ -90,8 +90,7 @@ export function useSystemBackButton({
             ? {
                 shown: true,
                 ...state.frame,
-                systemImage:
-                  state.icon === 'close' ? 'xmark' : 'chevron.backward',
+                systemImage: backButtonSystemImage(state.icon),
                 label: state.accessibilityLabel,
                 ownerId: store.backButtonOwnerId,
               }

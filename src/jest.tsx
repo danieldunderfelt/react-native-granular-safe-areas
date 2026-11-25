@@ -11,8 +11,10 @@
 //
 // Then the hooks compute what they would on that device (regions, system controls, `useSafeAreaInsetsFor`,
 // `useTabBarEdge`), and `SystemBackButton` hides your button where the system shows its own, rendering a pressable
-// stand-in with the test ID `SystemBackButton` that calls the `onPress` of the screen that would get it. Views still
-// render as plain `View`s: nothing is laid out in Jest, so there's nothing for them to measure.
+// stand-in with the test ID `SystemBackButton` that calls the `onPress` of the screen that would get it, and carries
+// its `icon` and the SF Symbol the system would draw (`systemImage`). `useSystemHeaderItems` returns `shown`, and
+// `getSystemHeaderItems()` gives the items the system would show, to check and press. Views still render as plain
+// `View`s: nothing is laid out in Jest, so there's nothing for them to measure.
 //
 // Everything from react-native-safe-area-context comes through as is; mock it as its README says.
 import {
@@ -47,7 +49,7 @@ import type {
   SafeAreaStyle,
   SafeAreaViewProps,
 } from './SafeAreaView';
-import { GranularSafeAreaStore } from './store';
+import { backButtonSystemImage, GranularSafeAreaStore } from './store';
 import type {
   SystemBackButtonProps,
   UseSystemBackButtonOptions,
@@ -254,6 +256,11 @@ export function useSystemBackButton({
       accessibilityRole="button"
       accessibilityLabel={state.accessibilityLabel}
       onPress={store.pressBackButton}
+      // What the system would draw, for tests to check: passed through to the host view.
+      {...({
+        icon: state.icon,
+        systemImage: backButtonSystemImage(state.icon),
+      } as object)}
     />
   ) : (
     <View />
@@ -323,19 +330,91 @@ export function GranularSafeAreaProvider({
   );
 }
 
+/** An item as the mock sees it: whatever you passed, loosely typed so tests can read labels and call handlers. */
+export type MockSystemHeaderItem = {
+  type?: string;
+  label?: string;
+  onPress?: () => void;
+  [key: string]: any;
+};
+
+/** What `getSystemHeaderItems()` returns: the controls the system would show for the screen. */
+export type MockSystemHeaderItems<Item = MockSystemHeaderItem> = {
+  headerRightItems: readonly Item[];
+  headerLeftItems: readonly Item[];
+  /** Whether UIKit's back button would show (where there's a screen to go back to). */
+  headerBackVisible: boolean;
+};
+
+type MockHeaderOptions = {
+  headerRightItems?: readonly unknown[];
+  headerLeftItems?: readonly unknown[];
+  headerBackVisible?: boolean;
+  enabled?: boolean;
+};
+
+type HeaderEntry = { options: MockHeaderOptions; shown: boolean };
+
+/** Every mounted `useSystemHeaderItems`, oldest first. */
+const headerEntries: HeaderEntry[] = [];
+
 /**
  * `useSystemHeaderItems` from `/native-stack` and `/expo-router`: `shown` where the mocked metrics have a vertical bar.
- * It leaves the screen's options alone. Map those entries here too:
+ * It leaves the screen's options alone and needs no navigation; read what the system would show with
+ * `getSystemHeaderItems()`. Map those entries here too:
  *
  *   jest.mock('react-native-granular-safe-areas/native-stack', () => require('react-native-granular-safe-areas/jest'));
+ *   jest.mock('react-native-granular-safe-areas/expo-router', () => require('react-native-granular-safe-areas/jest'));
  */
-export function useSystemHeaderItems({
-  enabled = true,
-}: { enabled?: boolean } = {}): { shown: boolean } {
+export function useSystemHeaderItems(options: MockHeaderOptions = {}): {
+  shown: boolean;
+} {
   const { metrics } = useSnapshot();
-  return {
-    shown: enabled && metrics !== null && getVerticalBar(metrics) !== null,
-  };
+  const shown =
+    (options.enabled ?? true) &&
+    metrics !== null &&
+    getVerticalBar(metrics) !== null;
+  const entry = useRef<HeaderEntry>({ options, shown });
+  useLayoutEffect(() => {
+    entry.current.options = options;
+    entry.current.shown = shown;
+  });
+  useLayoutEffect(() => {
+    const current = entry.current;
+    headerEntries.push(current);
+    return () => {
+      const index = headerEntries.indexOf(current);
+      if (index !== -1) headerEntries.splice(index, 1);
+    };
+  }, []);
+  return { shown };
+}
+
+/**
+ * The items the system would show in its own controls, as the screen passed them to `useSystemHeaderItems`, with its
+ * latest handlers: from the most recently mounted screen whose items are shown. `null` when none is, such as without
+ * Duo metrics. Call a handler in `act`:
+ *
+ * ```tsx
+ * mockSafeAreaMetrics(fixtures.iPhoneDuoOuterPortrait);
+ * render(<TripDetails />);
+ * const share = getSystemHeaderItems()?.headerRightItems.find((item) => item.label === 'Share');
+ * act(() => share!.onPress!());
+ * ```
+ */
+export function getSystemHeaderItems<
+  Item = MockSystemHeaderItem,
+>(): MockSystemHeaderItems<Item> | null {
+  for (let i = headerEntries.length - 1; i >= 0; i--) {
+    const { options, shown } = headerEntries[i]!;
+    if (!shown) continue;
+    return {
+      headerRightItems: (options.headerRightItems ?? []) as readonly Item[],
+      headerLeftItems: (options.headerLeftItems ?? []) as readonly Item[],
+      headerBackVisible: options.headerBackVisible ?? true,
+    };
+  }
+  return null;
 }
 
 export function GranularSafeAreaDebugOverlay() {

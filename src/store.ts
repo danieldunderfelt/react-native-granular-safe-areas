@@ -13,6 +13,11 @@ import type { GranularSafeAreaMetrics, Rect, SafeAreaRegion } from './types';
 /** Which symbol a vertical bar back button shows: a back chevron, or a close cross for modals and sheets. */
 export type BackButtonIcon = 'back' | 'close';
 
+/** The SF Symbol the system draws for each back button icon. */
+export function backButtonSystemImage(icon: BackButtonIcon): string {
+  return icon === 'close' ? 'xmark' : 'chevron.backward';
+}
+
 /** The back button the provider shows in the vertical bar. */
 export type BackButtonState = {
   /** Where it is, in the provider's coordinates. */

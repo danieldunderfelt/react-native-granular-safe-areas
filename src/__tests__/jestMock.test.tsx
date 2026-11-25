@@ -11,11 +11,13 @@ jest.mock('react-native-safe-area-context', () => ({}));
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import {
   fixtures,
+  getSystemHeaderItems,
   GranularSafeAreaProvider,
   mockSafeAreaMetrics,
   SystemBackButton,
   useSafeAreaInsetsFor,
   useSystemControls,
+  useSystemHeaderItems,
   useTabBarEdge,
 } from '../jest';
 
@@ -32,11 +34,14 @@ beforeAll(() => {
   globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
 
+const mounted: ReactTestRenderer[] = [];
+
 function render(element: React.ReactElement) {
   let renderer!: ReactTestRenderer;
   act(() => {
     renderer = create(element);
   });
+  mounted.push(renderer);
   return renderer;
 }
 
@@ -50,7 +55,10 @@ function Probe({ onRender }: { onRender: (value: unknown) => void }) {
   return null;
 }
 
-afterEach(() => mockSafeAreaMetrics(null));
+afterEach(() => {
+  act(() => mounted.splice(0).forEach((renderer) => renderer.unmount()));
+  mockSafeAreaMetrics(null);
+});
 
 describe('the Jest mock', () => {
   it('has nothing to avoid by default', () => {
@@ -131,6 +139,24 @@ describe('the Jest mock', () => {
     });
   });
 
+  it('tells which icon the system would draw', () => {
+    const tree = render(
+      <GranularSafeAreaProvider mock={fixtures.iPhoneDuoOuterPortrait}>
+        <SystemBackButton onPress={() => {}} icon="close" />
+      </GranularSafeAreaProvider>
+    );
+    const [button] = tree.root.findAll(
+      (node) =>
+        node.props.testID === 'SystemBackButton' &&
+        typeof node.type === 'string'
+    );
+    expect(button!.props).toMatchObject({
+      icon: 'close',
+      systemImage: 'xmark',
+      accessibilityLabel: 'Close',
+    });
+  });
+
   it('gives way when disabled', () => {
     const tree = render(
       <GranularSafeAreaProvider mock={fixtures.iPhoneDuoOuterPortrait}>
@@ -142,6 +168,51 @@ describe('the Jest mock', () => {
     expect(tree.root.findAllByType('mine-back-button' as never)).toHaveLength(
       1
     );
+  });
+});
+
+function HeaderScreen({
+  onShare,
+  enabled,
+}: {
+  onShare: () => void;
+  enabled?: boolean;
+}) {
+  const { shown } = useSystemHeaderItems({
+    enabled,
+    headerRightItems: [{ type: 'button', label: 'Share', onPress: onShare }],
+  });
+  return shown ? null : <mine-back-button />;
+}
+
+describe('useSystemHeaderItems in the Jest mock', () => {
+  it('has no items where the system has no place for them', () => {
+    render(<HeaderScreen onShare={() => {}} />);
+    expect(getSystemHeaderItems()).toBeNull();
+  });
+
+  it('gives the items to check and press on the iPhone Duo, with the latest handlers', () => {
+    mockSafeAreaMetrics(fixtures.iPhoneDuoOuterPortrait);
+    const first = jest.fn();
+    const second = jest.fn();
+    const tree = render(<HeaderScreen onShare={first} />);
+    act(() => tree.update(<HeaderScreen onShare={second} />));
+    const items = getSystemHeaderItems();
+    expect(items).toMatchObject({
+      headerRightItems: [{ type: 'button', label: 'Share' }],
+      headerLeftItems: [],
+      headerBackVisible: true,
+    });
+    act(() => items!.headerRightItems[0]!.onPress!());
+    expect(second).toHaveBeenCalledTimes(1);
+    expect(first).not.toHaveBeenCalled();
+
+    act(() => tree.update(<HeaderScreen onShare={second} enabled={false} />));
+    expect(getSystemHeaderItems()).toBeNull();
+    act(() => tree.update(<HeaderScreen onShare={second} />));
+    expect(getSystemHeaderItems()).not.toBeNull();
+    act(() => tree.unmount());
+    expect(getSystemHeaderItems()).toBeNull();
   });
 });
 
