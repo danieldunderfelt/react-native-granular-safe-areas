@@ -1,6 +1,6 @@
 {
   "name": "react-native-granular-safe-areas",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Granular safe areas for React Native: avoid the actual OS UI regions (iPhone Duo status column, cameras, system bars), not whole inset bands",
   "main": "./lib/module/index.js",
   "types": "./lib/typescript/src/index.d.ts",
