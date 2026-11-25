@@ -278,6 +278,9 @@ describe('getSystemControls on Android', () => {
       ],
       itemSize: 40,
       center: 20,
+      status: null,
+      start: 0,
+      cameras: [],
     });
   });
 

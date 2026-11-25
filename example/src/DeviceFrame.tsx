@@ -41,14 +41,7 @@ export function DeviceFrame({
 function FakeSystemUI({ metrics }: { metrics: GranularSafeAreaMetrics }) {
   const { occlusions, systemBars, divisions, width, height } = metrics;
   const controls = getSystemControls(metrics);
-  // The status cluster is what the strip starts with.
-  const cluster = controls?.occupied.find((r) => r.y <= controls.strip.y + 0.5);
-  const bar = controls
-    ? {
-        column: controls.strip,
-        top: cluster ? cluster.y + cluster.height : controls.strip.y,
-      }
-    : null;
+  const bar = controls ? { column: controls.strip, top: controls.start } : null;
   // The occlusion that covers the whole status cluster isn't a camera; draw only the cameras inside it.
   const cameras = occlusions.filter(
     (o) => o.active && !(bar && o.width >= bar.column.width - 1)

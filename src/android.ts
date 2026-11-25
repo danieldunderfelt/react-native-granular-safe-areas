@@ -240,5 +240,8 @@ export function getAndroidSystemControls(
     free,
     itemSize: strip.height,
     center: strip.y + strip.height / 2,
+    status: null,
+    start: strip.x,
+    cameras: [],
   };
 }

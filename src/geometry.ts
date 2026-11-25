@@ -361,6 +361,8 @@ export type VerticalBar = {
   centerX: number;
   /** The bar items UIKit currently shows in the column (back button, header items, tab bar), top to bottom. */
   items: Rect[];
+  /** The active cameras in the column, top to bottom. */
+  cameras: Rect[];
 };
 
 /**
@@ -399,7 +401,21 @@ export function getVerticalBar(
     bottom: height - Math.max(insets.bottom, region?.bottom ?? 0),
     centerX,
     items,
+    cameras: columnCameras(column, metrics),
   };
+}
+
+/**
+ * The active cameras in the vertical bar column. The platform reports the whole status cluster as an occlusion too,
+ * spanning the column; it's not a camera. The cameras are the narrower occlusions in the column.
+ */
+function columnCameras(column: Rect, metrics: GranularSafeAreaMetrics): Rect[] {
+  return metrics.occlusions
+    .filter(
+      (o) => o.active && overlaps(o, column) && o.width < column.width - 1
+    )
+    .map(rectOf)
+    .sort((a, b) => a.y - b.y);
 }
 
 /**
@@ -454,6 +470,21 @@ export type SystemControls = {
   itemSize: number;
   /** The line the system centers its controls on, across the strip: an x for a vertical strip, a y for a horizontal one. */
   center: number;
+  /**
+   * The status cluster at the start of the strip (on the iPhone Duo: the camera, the time and signal), across the
+   * strip's width, or `null` when there's none.
+   */
+  status: Rect | null;
+  /**
+   * Where the system's controls start along the strip, right past the status cluster: a y for a vertical strip, an x
+   * for a horizontal one. On the iPhone Duo, the top of the back button's slot.
+   */
+  start: number;
+  /**
+   * The camera housings in the strip, in the provider's coordinates: on the iPhone Duo, the camera at the top of the
+   * vertical bar, which the system centers its controls on. Empty where there's none, or it's off.
+   */
+  cameras: Rect[];
 };
 
 /**
@@ -501,6 +532,9 @@ export function getSystemControls(
     free,
     itemSize: VERTICAL_BAR_ITEM_SIZE,
     center: bar.centerX,
+    status: bar.top > column.y ? across(column.y, bar.top - column.y) : null,
+    start: bar.top,
+    cameras: bar.cameras,
   };
 }
 

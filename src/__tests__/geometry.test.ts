@@ -5,6 +5,7 @@ import {
   computeElementInsets,
   edgeMask,
   edgeModes,
+  getSystemControls,
   getVerticalBar,
   followsOwnPadding,
   metricsForSubrect,
@@ -927,6 +928,9 @@ describe('getVerticalBar', () => {
       bottom: 644,
       centerX: 418,
       items: [{ x: 394, y: 492, width: 48, height: 162 }],
+      cameras: [
+        { x: 399.6666666666667, y: 29.333333333333332, width: 37, height: 37 },
+      ],
     });
   });
 
@@ -1147,5 +1151,40 @@ describe('iPad window controls', () => {
     expect(
       parseMetrics(JSON.stringify(fixtures.iPadProFullScreen))?.windowControls
     ).toBeUndefined();
+  });
+});
+
+describe('getSystemControls on the iPhone Duo', () => {
+  it('has the status cluster, where controls start, and the camera', () => {
+    const controls = getSystemControls(duo)!;
+    expect(controls.status).toEqual({ x: 382, y: 0, width: 84, height: 174 });
+    expect(controls.start).toBe(174);
+    // The camera, not the occlusion that covers the whole cluster.
+    expect(controls.cameras).toEqual([
+      {
+        x: 399.6666666666667,
+        y: 29.333333333333332,
+        width: 37,
+        height: 37,
+      },
+    ]);
+    // The system centers its controls on the camera.
+    const [camera] = controls.cameras;
+    expect(camera!.x + camera!.width / 2).toBeCloseTo(controls.center, 0);
+  });
+
+  it('follows the bar to the left in landscape, below the camera', () => {
+    const controls = getSystemControls(fixtures.iPhoneDuoOuterLandscape)!;
+    expect(controls.edge).toBe('left');
+    expect(controls.start).toBe(82);
+    expect(controls.cameras).toHaveLength(1);
+    expect(controls.cameras[0]!.x).toBeLessThan(84);
+  });
+
+  it('has no camera where it is off, open in landscape', () => {
+    const controls = getSystemControls(fixtures.iPhoneDuoInnerLandscape)!;
+    expect(controls.cameras).toEqual([]);
+    expect(controls.status).toEqual({ x: 867, y: 0, width: 84, height: 124 });
+    expect(controls.start).toBe(124);
   });
 });
