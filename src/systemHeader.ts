@@ -68,6 +68,13 @@ const NATIVE_KEYS = [
   'unstable_headerLeftItems',
 ];
 
+/** The fallback, with every key the native header sets cleared, so none of them is left behind. */
+function fallbackOptions(fallback: object | undefined): object {
+  const reset: Record<string, unknown> = {};
+  for (const key of NATIVE_KEYS) reset[key] = undefined;
+  return { ...reset, ...(fallback ?? DEFAULT_FALLBACK) };
+}
+
 /**
  * Whether the system has a place for header controls where the screen is: the iPhone Duo's vertical bar. Only iOS
  * draws UIKit's bar items there; a mocked Duo layout elsewhere doesn't count.
@@ -111,6 +118,9 @@ export function useSystemHeaderItemsFor<Item, Options>(
   const leftKey = shapeKey(headerLeftItems);
   const fallbackKey = shapeKey(fallback);
 
+  // Whether the screen has the native header now, so it can be taken off when the hook goes away.
+  const nativeHeaderSet = useRef(false);
+
   // In a layout effect, so the header is right before the screen is first drawn.
   useLayoutEffect(() => {
     const items = (key: 'headerRightItems' | 'headerLeftItems') => {
@@ -129,14 +139,22 @@ export function useSystemHeaderItemsFor<Item, Options>(
         unstable_headerLeftItems: items('headerLeftItems'),
       });
     } else {
-      const reset: Record<string, unknown> = {};
-      for (const key of NATIVE_KEYS) reset[key] = undefined;
-      navigation.setOptions({
-        ...reset,
-        ...(latest.current.fallback ?? DEFAULT_FALLBACK),
-      });
+      navigation.setOptions(fallbackOptions(latest.current.fallback));
     }
+    nativeHeaderSet.current = shown;
   }, [navigation, shown, headerBackVisible, rightKey, leftKey, fallbackKey]);
+
+  // When the component unmounts while its screen stays (it's behind a feature flag, say), or the navigation object
+  // changes, the screen goes back to the fallback, so the system's controls don't outlive the hook. When the whole
+  // screen goes, React Navigation drops its options anyway.
+  useLayoutEffect(
+    () => () => {
+      if (!nativeHeaderSet.current) return;
+      nativeHeaderSet.current = false;
+      navigation.setOptions(fallbackOptions(latest.current.fallback));
+    },
+    [navigation]
+  );
 
   return { shown };
 }

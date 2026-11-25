@@ -72,12 +72,18 @@ function setup(metrics: GranularSafeAreaMetrics) {
   const shown = jest.fn();
   let renderer!: ReturnType<typeof create>;
   const render = (
-    options: SystemHeaderItemsOptions<Item, Record<string, unknown>>
+    options: SystemHeaderItemsOptions<Item, Record<string, unknown>> | null
   ) =>
     act(() => {
       const element = (
         <GranularSafeAreaContext.Provider value={store}>
-          <Screen navigation={navigation} options={options} onResult={shown} />
+          {options ? (
+            <Screen
+              navigation={navigation}
+              options={options}
+              onResult={shown}
+            />
+          ) : null}
         </GranularSafeAreaContext.Provider>
       );
       if (renderer) renderer.update(element);
@@ -183,6 +189,32 @@ describe('useSystemHeaderItems', () => {
       headerRightItems: [{ type: 'button', label: 'Save', onPress: second }],
     });
     expect(navigation.setOptions).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('useSystemHeaderItems going away', () => {
+  it('takes the native header off when it unmounts while the screen stays', () => {
+    const { navigation, render } = setup(fixtures.iPhoneDuoOuterPortrait);
+    render({
+      headerRightItems: [{ type: 'button', label: 'Share', onPress() {} }],
+      fallback: { headerShown: true, title: 'Trip' },
+    });
+    expect(lastOptions(navigation)).toMatchObject({ headerTransparent: true });
+    render(null);
+    expect(navigation.setOptions).toHaveBeenCalledTimes(2);
+    expect(lastOptions(navigation)).toMatchObject({
+      headerShown: true,
+      title: 'Trip',
+      headerTransparent: undefined,
+      unstable_headerRightItems: undefined,
+    });
+  });
+
+  it('leaves the fallback alone when it unmounts without the native header', () => {
+    const { navigation, render } = setup(fixtures.iPhone18ProPortrait);
+    render({});
+    render(null);
+    expect(navigation.setOptions).toHaveBeenCalledTimes(1);
   });
 });
 
