@@ -111,6 +111,9 @@ type SystemControls = {
   free: Rect[]; // the stretches nothing occupies, from start to end
   itemSize: number; // the size of the system's own controls in the strip
   center: number; // the line the system centers its controls on: an x for a vertical strip, a y for a horizontal one
+  status: Rect | null; // the status cluster the strip starts with, across its width
+  start: number; // where the system's controls start, past the status cluster: a y for a vertical strip, an x for a horizontal one
+  cameras: Rect[]; // the camera housings in the strip, such as the iPhone Duo's camera; empty where there's none or it's off
 };
 ```
 
@@ -191,7 +194,11 @@ Takes the props of `SafeAreaView`, with Reanimated's animated styles, plus:
 Header buttons drawn by the system for a screen with a header of its own. Where the system has a place for its
 controls (the iPhone Duo closed, or open in landscape), the screen gets a transparent, empty native header with the
 items, and UIKit draws its back button and the items in the vertical bar; `shown` is `true`. Elsewhere it gets
-`fallback`.
+`fallback`, and so does the screen when the component that calls it unmounts while the screen stays.
+
+Only a native-stack screen turns the options into a header. Elsewhere (the root of a tab rendered through `<Slot />`,
+a JS stack, a tab navigator's own screens) nothing draws them: render the screen in a native stack, or pass
+`enabled: false`.
 
 | Option | Type | Default | |
 | --- | --- | --- | --- |
@@ -211,14 +218,24 @@ The main entry's exports for Jest. `SafeAreaView` and `SafeAreaAccessory` render
 `useSafeAreaStyle` give zero insets. By default there's nothing to avoid; with `<GranularSafeAreaProvider mock={...}>`
 or `mockSafeAreaMetrics(metrics | null)`, the hooks compute what they would on that device (`useSafeAreaRegions`,
 `useSystemControls`, `useSafeAreaInsetsFor`, `useTabBarEdge`, `useSystemHeaderItems`, which leaves the screen's
-options alone), and `SystemBackButton` shows a pressable stand-in with
-the test ID `SystemBackButton` where the system would show its button. react-native-safe-area-context comes through as
-is, so mock it too:
+options alone), and `SystemBackButton` shows a pressable stand-in with the test ID `SystemBackButton` where the system
+would show its button, with props `icon` and `systemImage` (the SF Symbol the system draws). react-native-safe-area-context
+comes through as is, so mock it too:
 
 ```ts
 jest.mock('react-native-granular-safe-areas', () => require('react-native-granular-safe-areas/jest'));
 jest.mock('react-native-safe-area-context', () => require('react-native-safe-area-context/jest/mock').default);
+// For useSystemHeaderItems, whichever entry you import it from:
+jest.mock('react-native-granular-safe-areas/native-stack', () => require('react-native-granular-safe-areas/jest'));
+jest.mock('react-native-granular-safe-areas/expo-router', () => require('react-native-granular-safe-areas/jest'));
 ```
+
+| Export | |
+| --- | --- |
+| `mockSafeAreaMetrics(metrics \| null)` | Lay out everything outside a provider for these metrics |
+| `getSystemHeaderItems()` | `{ headerRightItems, headerLeftItems, headerBackVisible } \| null`: what the system would show for the most recently mounted screen whose `useSystemHeaderItems` items are shown, with its latest handlers |
+
+Types: `MockSystemHeaderItems`, `MockSystemHeaderItem`.
 
 ## `/testing`
 

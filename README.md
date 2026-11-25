@@ -364,8 +364,19 @@ type SafeAreaRegion = {
 `useSystemControls()` describes the strip along one edge where the system puts its controls and yours may join (the
 iPhone Duo's vertical bar, or the caption bar of an Android window in desktop windowing that the app draws under), or
 returns `null`: its `edge`, the `strip`, the `occupied` stretches (the status cluster, the bar items, the window
-buttons, the system back button), the `free` ones, the system's `itemSize`, and the `center` line its items are
-centered on. Most apps never need it.
+buttons, the system back button), the `free` ones, the system's `itemSize`, the `center` line its items are
+centered on, the `status` cluster the strip starts with, the `start` of its controls past that, and the `cameras` in
+it. Most apps never need it. It's there for lining your own UI up with the system's: on the Duo closed in portrait,
+the camera is at `399.7, 29.3` (`37 × 37`), the cluster takes `0–174`, and the system's items start at `174`,
+centered on `418`, the camera's center:
+
+```tsx
+const BUTTON_SIZE = 44;
+const controls = useSystemControls();
+// A header button level with the camera, without a hardcoded number.
+const camera = controls?.cameras[0];
+const top = camera ? camera.y + camera.height / 2 - BUTTON_SIZE / 2 : 12;
+```
 
 `useTabBarEdge()` says where the system puts a tab bar here, whether or not the app has one: `'right'` or `'left'`
 on the iPhone Duo (closed, or open in landscape), `'top'` in an iPad window of regular width, and `'bottom'`
@@ -505,9 +516,18 @@ shows changes, and handlers always call the latest code. The back button pops th
 | `navigation` | the screen's | The navigation object to set the options on |
 
 It sets the screen's header options, so don't set the same ones elsewhere for that screen (`navigation.setOptions`,
-`<Stack.Screen options>`); put them in `fallback`. It needs a native-stack version with `unstable_headerRightItems`.
-Expo Router has its own copy of React Navigation, so its screens need the `/expo-router` entry; the `/native-stack`
-one only finds React Navigation's. On screens that use it, `SystemBackButton` isn't needed.
+`<Stack.Screen options>`); put them in `fallback`. When the component that calls it unmounts while the screen stays
+(it's behind a feature flag, say), the screen goes back to `fallback`. It needs a native-stack version with
+`unstable_headerRightItems`. Expo Router has its own copy of React Navigation, so its screens need the `/expo-router`
+entry; the `/native-stack` one only finds React Navigation's. On screens that use it, `SystemBackButton` isn't needed.
+
+**Only native-stack screens have a header to set.** The hook sets the options of the screen it's in, and only a
+native stack turns them into a UIKit navigation bar whose items move into the vertical bar. A screen rendered by
+anything else gets options nothing draws: the root of a tab that renders through `<Slot />`, a JS stack
+(`@react-navigation/stack`), a tab navigator's own screens, a modal outside a stack. There, `shown` is still `true` on
+the Duo, so your own buttons would hide with nothing in their place. Render such a screen in a native stack (in Expo
+Router, a `_layout` with `<Stack />` instead of `<Slot />`, even for a single screen), or pass `enabled: false` and use
+`SystemBackButton` and `useSystemControls` for its buttons.
 
 ### Options
 
@@ -603,8 +623,9 @@ safe-area-context's own mock, which it re-exports:
 // jest.setup.ts
 jest.mock('react-native-granular-safe-areas', () => require('react-native-granular-safe-areas/jest'));
 jest.mock('react-native-safe-area-context', () => require('react-native-safe-area-context/jest/mock').default);
-// If you use useSystemHeaderItems:
+// If you use useSystemHeaderItems, the entry you import it from:
 jest.mock('react-native-granular-safe-areas/native-stack', () => require('react-native-granular-safe-areas/jest'));
+jest.mock('react-native-granular-safe-areas/expo-router', () => require('react-native-granular-safe-areas/jest'));
 ```
 
 By default it's a device with nothing to avoid. To test a layout such as the iPhone Duo's, give it one of `fixtures`,
@@ -629,8 +650,26 @@ The hooks then return what they would on that device: `useSystemControls`, `useS
 `useSafeAreaInsetsFor`, and `useSystemHeaderItems` (map `react-native-granular-safe-areas/native-stack` or
 `/expo-router` to the mock too). `SystemBackButton` hides your button where the system would show its own, and renders a
 pressable stand-in with the test ID `SystemBackButton` that calls the `onPress` of the screen that would get it, so
-`fireEvent.press(screen.getByTestId('SystemBackButton'))` works. Views stay plain `View`s: nothing is laid out in
-Jest, so there's nothing for them to measure.
+`fireEvent.press(screen.getByTestId('SystemBackButton'))` works. The stand-in carries the `icon` you gave it and the
+SF Symbol the system would draw as `systemImage` (`'chevron.backward'`, or `'xmark'` for `icon="close"`).
+
+`useSystemHeaderItems` leaves the screen's options alone in the mock, so it needs no navigator. `getSystemHeaderItems()`
+returns what the system would show for the most recently mounted screen whose items are shown, or `null` where none
+are:
+
+```tsx
+import { getSystemHeaderItems, mockSafeAreaMetrics } from 'react-native-granular-safe-areas/jest';
+
+mockSafeAreaMetrics(fixtures.iPhoneDuoOuterPortrait);
+render(<TripDetails />);
+const { headerRightItems, headerBackVisible } = getSystemHeaderItems()!;
+const share = headerRightItems.find((item) => item.label === 'Share')!;
+act(() => share.onPress!());
+expect(onShare).toHaveBeenCalled();
+```
+
+The items are the ones the screen passed, with its latest handlers; menus are in them as you wrote them. Views stay
+plain `View`s: nothing is laid out in Jest, so there's nothing for them to measure.
 
 The geometry behind the components (`buildRegions`, `safeAreaViewInsets`, `parseMetrics`, ...) is exported from
 `react-native-granular-safe-areas/testing`, for tests and tools.
