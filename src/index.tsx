@@ -16,14 +16,20 @@ export {
   type UseSafeAreaStyleOptions,
 } from './SafeAreaView';
 
-// Insets for a position you describe, the regions themselves, and the strip the system puts its controls in.
+// Insets for a position you describe, the regions themselves, device detection, and the strip the system puts its controls in.
 export {
+  useSafeAreaDevice,
   useSafeAreaInsetsFor,
   useSafeAreaRegions,
   useSystemControls,
   useTabBarEdge,
   type SafeAreaInsetsForOptions,
 } from './hooks';
+export type {
+  SafeAreaDeviceInfo,
+  SafeAreaDevicePosture,
+  SafeAreaDeviceType,
+} from './device';
 
 // The system back button, for screens with a custom header.
 export {
@@ -47,7 +53,19 @@ export {
 export { fixtures, type FixtureName } from './fixtures';
 
 export { refreshSafeAreas } from './refresh';
-export { getDiagnostics } from './diagnostics';
+export {
+  checkDiagnostics,
+  getDiagnostics,
+  useSafeAreaDiagnostics,
+  type CheckDiagnosticsOptions,
+  type DiagnosticCheck,
+  type DiagnosticCheckStatus,
+  type DiagnosticsCheckResult,
+  type SafeAreaDiagnosticReport,
+  type SafeAreaUnavailableReason,
+  type UseSafeAreaDiagnosticsOptions,
+  type UseSafeAreaDiagnosticsResult,
+} from './diagnostics';
 
 export type { GranularPlacement, SystemControls } from './geometry';
 export type {

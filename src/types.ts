@@ -99,10 +99,14 @@ export type GranularSafeAreaMetrics = {
    * with the system's margins around them. From the corner-adapted safe area (iOS 26+). Absent or `null` otherwise.
    */
   windowControls?: Rect | null;
-  /** iOS: the device idiom. Absent elsewhere. */
+  /** Device idiom (`'phone'` or `'pad'`). Reported on iOS and Android (`smallestScreenWidthDp >= 600`). */
   idiom?: 'phone' | 'pad';
   /** iOS: the provider's horizontal size class. On an iPad, UIKit puts a tab bar at the top when it's regular. */
   horizontalSizeClass?: 'compact' | 'regular';
+  /** Hardware model identifier reported by the native side (e.g. `'iPhone19,4'`, `'Google Pixel 10'`). */
+  deviceModel?: string;
+  /** OS version reported by the native side (e.g. `'27.2'` on iOS, `'37'` on Android). */
+  systemVersion?: string;
   /** Android: what each inset is made of, to break the bands down. Absent elsewhere. */
   android?: AndroidInsetSources;
 };

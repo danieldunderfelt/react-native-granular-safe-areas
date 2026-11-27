@@ -29,6 +29,24 @@ import {
   type ReactNode,
 } from 'react';
 import { Pressable, View, type ViewProps } from 'react-native';
+import {
+  checkDiagnostics,
+  type CheckDiagnosticsOptions,
+  type DiagnosticCheck,
+  type DiagnosticCheckStatus,
+  type DiagnosticsCheckResult,
+} from './diagnosticsCheck';
+import type {
+  SafeAreaDeviceInfo,
+  SafeAreaDevicePosture,
+  SafeAreaDeviceType,
+} from './device';
+import type {
+  SafeAreaDiagnosticReport,
+  UseSafeAreaDiagnosticsOptions,
+  UseSafeAreaDiagnosticsResult,
+} from './diagnosticsHook';
+import type { SafeAreaUnavailableReason } from './fallback';
 import { fixtures } from './fixtures';
 import {
   activeEdges,
@@ -216,6 +234,33 @@ export function useSystemControls(): SystemControls | null {
 
 export function useTabBarEdge(): Edge {
   return getTabBarEdge(useSnapshot().metrics);
+}
+
+export function useSafeAreaDevice(): SafeAreaDeviceInfo {
+  return useSnapshot().device;
+}
+
+export function useSafeAreaDiagnostics(
+  options: UseSafeAreaDiagnosticsOptions = {}
+): UseSafeAreaDiagnosticsResult {
+  const { device, fallbackToBands } = useSnapshot();
+  const checkNow = (): Promise<SafeAreaDiagnosticReport> => {
+    const report: SafeAreaDiagnosticReport = {
+      ok: true,
+      reason: null,
+      summary: 'Jest mock active; native diagnostics skipped.',
+      platform: device.platform,
+      device,
+      fallbackToBands,
+      checks: [],
+      failedChecks: [],
+      timestamp: new Date().toISOString(),
+      ...(options.includeDiagnostics ? { diagnostics: null } : {}),
+    };
+    options.onCheck?.(report);
+    return Promise.resolve(report);
+  };
+  return { report: null, fallbackActive: fallbackToBands, checkNow };
 }
 
 /**
@@ -426,3 +471,18 @@ export function refreshSafeAreas() {}
 export function getDiagnostics(): Promise<Record<string, unknown> | null> {
   return Promise.resolve(null);
 }
+
+export {
+  checkDiagnostics,
+  type CheckDiagnosticsOptions,
+  type DiagnosticCheck,
+  type DiagnosticCheckStatus,
+  type DiagnosticsCheckResult,
+  type SafeAreaDeviceInfo,
+  type SafeAreaDevicePosture,
+  type SafeAreaDeviceType,
+  type SafeAreaDiagnosticReport,
+  type SafeAreaUnavailableReason,
+  type UseSafeAreaDiagnosticsOptions,
+  type UseSafeAreaDiagnosticsResult,
+};

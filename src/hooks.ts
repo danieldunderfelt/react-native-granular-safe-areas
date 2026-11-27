@@ -19,6 +19,7 @@ import {
 } from './geometry';
 import { getDefaultStore } from './defaultStore';
 import { GranularSafeAreaContext } from './context';
+import type { SafeAreaDeviceInfo } from './device';
 import type { GranularSafeAreaStore } from './store';
 import type {
   Edge,
@@ -73,6 +74,19 @@ export function useTabBarEdge(): Edge {
   const store = useGranularSafeAreaStore();
   return useSyncExternalStore(store.subscribe, () =>
     getTabBarEdge(store.getSnapshot().metrics)
+  );
+}
+
+/**
+ * The current device's form factor (`'phone'`, `'tablet'`, `'foldable'`, `'desktop'`, `'web'`, or `'unknown'`),
+ * posture (`'standard'`, `'folded'`, `'unfolded'`, `'half-opened'`, `'windowed'`), native hardware/OS identifiers, and
+ * whether granular safe areas are currently supported and active. Re-renders only when any of these fields change.
+ */
+export function useSafeAreaDevice(): SafeAreaDeviceInfo {
+  const store = useGranularSafeAreaStore();
+  return useSyncExternalStore(
+    store.subscribe,
+    () => store.getSnapshot().device
   );
 }
 

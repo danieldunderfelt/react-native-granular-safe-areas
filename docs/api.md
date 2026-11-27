@@ -122,6 +122,47 @@ type SystemControls = {
 Where the system puts a tab bar here, whether or not the app has one: the vertical bar's edge on the iPhone Duo
 (closed, or open in landscape), `'top'` in an iPad window of regular width, `'bottom'` everywhere else.
 
+### `useSafeAreaDevice(): SafeAreaDeviceInfo`
+
+Classifies the current device's form factor, posture, hardware/OS metadata, and whether granular safe areas are
+currently active. Re-renders only when any of these fields change (e.g. folding/unfolding, resizing a window, or
+falling back to band avoidance).
+
+```ts
+type SafeAreaDeviceInfo = {
+  type: 'phone' | 'tablet' | 'foldable' | 'desktop' | 'web' | 'unknown';
+  posture: 'standard' | 'folded' | 'unfolded' | 'half-opened' | 'windowed';
+  platform: 'ios' | 'android' | 'web' | 'unknown';
+  hasVerticalBar: boolean;
+  hasFold: boolean;
+  isFoldActive: boolean;
+  granularSupported: boolean;
+  model: string | null; // e.g. 'iPhone19,4', 'Google Pixel 10'
+  systemVersion: string | null; // e.g. '27.2' (iOS), '37' (Android API level)
+  idiom: 'phone' | 'pad' | null;
+};
+```
+
+### `useSafeAreaDiagnostics(options?): UseSafeAreaDiagnosticsResult`
+
+Opt-in runtime check and external logging hook (e.g. for Datadog or Sentry). Verifies that the native module,
+metrics observer, and visible system bar controls registered properly after mount, structural metrics changes, and app
+foregrounding. When a check fails, it logs a warning in `__DEV__`, automatically switches the store to whole-band
+avoidance (unless `fallbackToBands: false`), and calls `onIssue(report)`.
+
+| Option | Type | Default | |
+| --- | --- | --- | --- |
+| `onIssue` | `(report: SafeAreaDiagnosticReport) => void` | | Called on failed checks (`report.ok === false`) for external logging or support telemetry |
+| `onCheck` | `(report: SafeAreaDiagnosticReport) => void` | | Called after every check, passing or failing |
+| `enabled` | `boolean` | `true` | Turn automatic checks on or off |
+| `fallbackToBands` | `boolean` | `true` | Fall back to whole-band avoidance while failing, and restore granular regions on recovery |
+| `delayMs` | `number` | `1500` | Settle delay after mount, structural metrics changes, or foregrounding |
+| `checkOnForeground` | `boolean` | `true` | Re-check when `AppState` returns to `'active'` |
+| `deduplicate` | `boolean` | `true` | Only invoke `onIssue` once per distinct failure signature while mounted |
+| `includeDiagnostics` | `boolean` | `false` | Attach the full raw `getDiagnostics()` payload on `report.diagnostics` |
+
+Returns `{ report: SafeAreaDiagnosticReport | null; fallbackActive: boolean; checkNow: () => Promise<SafeAreaDiagnosticReport> }`.
+
 ### `SystemBackButton`, `useSystemBackButton(options)`
 
 A system back button where the platform has a place for one in its own controls (the iPhone Duo's vertical bar), in
@@ -165,6 +206,7 @@ renders one; without a provider, render it last in the app's root view. Takes an
 | --- | --- |
 | `refreshSafeAreas(): void` | Re-read the OS UI right away, e.g. after your own navigation |
 | `getDiagnostics(): Promise<Record<string, unknown> \| null>` | Everything the native side can see, for bug reports. `null` where there's no native side |
+| `checkDiagnostics(diagnostics, options?): DiagnosticsCheckResult` | Verify a diagnostics payload (or Probe dump) to confirm bands are refined, visible UIKit bar controls are covered, and the store matches the key window |
 | `fixtures` | Recorded metrics: `iPhoneDuoOuterPortrait`, `iPhoneDuoOuterPortraitWithTabBar`, `iPhoneDuoOuterPortraitWithNativeHeader`, `iPhoneDuoOuterLandscape`, `iPhoneDuoInnerLandscape`, `iPhoneDuoInnerBookFold`, `iPhoneDuoInnerPortrait`, `iPhone18ProPortrait`, `iPadProFullScreen`, `iPadProWindow`, `pixel10Portrait`, `pixel10Landscape` |
 
 ### Types
@@ -172,9 +214,12 @@ renders one; without a provider, render it last in the app's root view. Takes an
 `SafeAreaViewProps`, `SafeAreaAccessoryProps`, `SafeAreaDefaultsOptions`, `UseSafeAreaStyleOptions`, `SafeAreaStyle`,
 `GranularSafeAreaDebugOverlayProps`, `SafeAreaInsetsForOptions`, `GranularInsetsOptions`,
 `GranularSafeAreaMode`, `GranularPlacement`, `SafeAreaRegion`, `SafeAreaRegionKind`, `SystemControls`,
+`SafeAreaDeviceInfo`, `SafeAreaDeviceType`, `SafeAreaDevicePosture`,
 `SystemBackButtonProps`, `SystemBackButtonIcon`, `UseSystemBackButtonOptions`, `UseSystemBackButtonResult`,
-`GranularSafeAreaProviderProps`, `GranularSafeAreaMetrics`, `FixtureName`, `ScrollAxes`, and safe-area-context's
-`Edge`, `Edges`, `EdgeMode`, `EdgeRecord`, `EdgeInsets`, `Rect`.
+`GranularSafeAreaProviderProps`, `GranularSafeAreaMetrics`, `FixtureName`, `ScrollAxes`,
+`CheckDiagnosticsOptions`, `DiagnosticCheck`, `DiagnosticCheckStatus`, `DiagnosticsCheckResult`,
+`SafeAreaDiagnosticReport`, `SafeAreaUnavailableReason`, `UseSafeAreaDiagnosticsOptions`,
+`UseSafeAreaDiagnosticsResult`, and safe-area-context's `Edge`, `Edges`, `EdgeMode`, `EdgeRecord`, `EdgeInsets`, `Rect`.
 
 ## `/reanimated`
 
@@ -217,8 +262,8 @@ a JS stack, a tab navigator's own screens) nothing draws them: render the screen
 The main entry's exports for Jest. `SafeAreaView` and `SafeAreaAccessory` render a `View`, `useSafeAreaViewInsets` and
 `useSafeAreaStyle` give zero insets. By default there's nothing to avoid; with `<GranularSafeAreaProvider mock={...}>`
 or `mockSafeAreaMetrics(metrics | null)`, the hooks compute what they would on that device (`useSafeAreaRegions`,
-`useSystemControls`, `useSafeAreaInsetsFor`, `useTabBarEdge`, `useSystemHeaderItems`, which leaves the screen's
-options alone), and `SystemBackButton` shows a pressable stand-in with the test ID `SystemBackButton` where the system
+`useSystemControls`, `useSafeAreaInsetsFor`, `useTabBarEdge`, `useSafeAreaDevice`, `useSafeAreaDiagnostics`,
+`useSystemHeaderItems`, which leaves the screen's options alone), and `SystemBackButton` shows a pressable stand-in with the test ID `SystemBackButton` where the system
 would show its button, with props `icon` and `systemImage` (the SF Symbol the system draws). react-native-safe-area-context
 comes through as is, so mock it too:
 
@@ -242,6 +287,9 @@ Types: `MockSystemHeaderItems`, `MockSystemHeaderItem`.
 | Export | |
 | --- | --- |
 | `parseMetrics(json)` | Metrics from the native side's JSON |
+| `getDeviceInfo(metrics, options?)` | Classify device type, posture, hardware/OS metadata, and granular capability |
+| `detectMetricsFallback(metrics)` | Check metrics for synchronous fallback conditions |
+| `checkDiagnostics(diagnostics, options?)` | Verify that a diagnostics payload reports and refines safe areas as expected |
 | `buildRegions(metrics, options?)` | Regions from metrics |
 | `computeElementInsets(element, regions, options?)` | The insets an element needs to clear the regions |
 | `safeAreaViewInsets(element, options)` | What a `SafeAreaView` computes: bands or regions, scroll views, what covers it, where it's seen |
@@ -255,4 +303,6 @@ Types: `MockSystemHeaderItems`, `MockSystemHeaderItem`.
 
 Types: `GranularSafeAreaMetrics`, `ReservedRegionFrame`, `SystemBarFrame`, `SafeAreaRegion`, `BuildRegionsOptions`,
 `ElementInsetsOptions`, `SafeAreaViewInsetsOptions`, `GranularPlacement`, `SystemControls`, `GranularSafeAreaSnapshot`,
-`GranularSafeAreaStore`.
+`GranularSafeAreaStore`, `SafeAreaDeviceInfo`, `SafeAreaDeviceType`, `SafeAreaDevicePosture`, `GetDeviceInfoOptions`,
+`SafeAreaFallbackInfo`, `SafeAreaUnavailableReason`, `CheckDiagnosticsOptions`, `DiagnosticCheck`,
+`DiagnosticCheckStatus`, `DiagnosticsCheckResult`.

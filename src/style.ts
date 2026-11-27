@@ -141,6 +141,11 @@ let warnedPercentage = false;
  * `additive` adds the inset to it, `maximum` uses whichever is larger, `off` leaves the edge alone. The element's own
  * value is read the way React Native lays it out, `start`/`end` and right-to-left included, and the result goes in the
  * key that decides that edge.
+ *
+ * For `margin`, the element's own margin is outside its laid-out box, so `insets` was already measured from inside it
+ * (the overlap remaining after the view's own margin). Adding `insets[edge]` to `base` therefore already implements
+ * `maximum` semantics (`base + max(0, needed - base) === max(base, needed)`): taking `Math.max(base, insets[edge])`
+ * would subtract `base` twice and leave the box `base` pt too close to the region.
  */
 export function layoutAdjustment(
   style: StyleProp<ViewStyle>,
@@ -161,7 +166,9 @@ export function layoutAdjustment(
       warnPercentage(kind, value);
     const base = typeof value === 'number' ? value : 0;
     const next =
-      mode === 'maximum' ? Math.max(base, insets[edge]) : base + insets[edge];
+      kind === 'padding' && mode === 'maximum'
+        ? Math.max(base, insets[edge])
+        : base + insets[edge];
     if (next === base) continue;
     out[key] = next;
     added[edge] = next - base;

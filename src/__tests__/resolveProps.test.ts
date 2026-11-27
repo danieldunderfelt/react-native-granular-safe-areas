@@ -1,7 +1,30 @@
 import { fixtures } from '../fixtures';
-import { buildRegions, getTabBarEdge, safeAreaViewInsets } from '../geometry';
+import {
+  buildRegions,
+  edgeModes,
+  getTabBarEdge,
+  safeAreaViewInsets,
+  withoutMargins,
+  ZERO_INSETS,
+} from '../geometry';
 import { parseMetrics } from '../metrics';
 import { mergeDefaults, resolveSafeAreaProps } from '../resolveProps';
+import { layoutAdjustment } from '../style';
+
+jest.mock('react-native', () => ({
+  I18nManager: { isRTL: false, doLeftAndRightSwapInRTL: true },
+  StyleSheet: {
+    flatten: (style: unknown): unknown =>
+      Array.isArray(style)
+        ? Object.assign(
+            {},
+            ...style.map((s) =>
+              (jest.requireMock('react-native') as any).StyleSheet.flatten(s)
+            )
+          )
+        : (style ?? undefined),
+  },
+}));
 
 describe('resolveSafeAreaProps', () => {
   it('fills in what the view leaves out from the defaults', () => {
@@ -84,6 +107,91 @@ describe('gap, wherever the padding lives', () => {
     expect(contentEnd({ x: 0, width: 466 }, 16, 16)).toBe(382 - 16);
     // The parent owns it: the view starts 16 pt in and has none.
     expect(contentEnd({ x: 16, width: 434 }, 0, 16)).toBe(382 - 16);
+  });
+
+  it('keeps the view’s box gap pt away from the column with mode="margin" and settles stably', () => {
+    const simulateMargin = ({
+      ownMargin,
+      parentPadding = 0,
+      gap,
+      edges = ['right'] as const,
+    }: {
+      ownMargin: number;
+      parentPadding?: number;
+      gap?: number;
+      edges?:
+        | readonly ('top' | 'right' | 'bottom' | 'left')[]
+        | { right: 'maximum' | 'additive' };
+    }) => {
+      const resolved = resolveSafeAreaProps(
+        { edges: edges as any, mode: 'margin' as const, gap },
+        {}
+      );
+      const modes = edgeModes(resolved.edges);
+      const spacing = (resolved as { spacing?: number }).spacing ?? 0;
+      let added = ZERO_INSETS;
+      let boxEnd = duo.width - parentPadding - ownMargin;
+
+      // Two measurement passes: first with ownMargin only, second verifying the withoutMargins fixed point.
+      for (let pass = 0; pass < 2; pass++) {
+        const laidOut = {
+          x: parentPadding + ownMargin,
+          y: 50,
+          width: boxEnd - (parentPadding + ownMargin),
+          height: 44,
+        };
+        const unadjusted = withoutMargins(laidOut, added);
+        const insets = safeAreaViewInsets(unadjusted, {
+          regions,
+          bands,
+          granular: true,
+          edges: ['right'],
+          spacing,
+          bounds: duo,
+        });
+        const adj = layoutAdjustment(
+          { marginRight: ownMargin },
+          insets,
+          'margin',
+          modes
+        );
+        const appliedMargin =
+          (adj.style?.marginRight as number | undefined) ?? ownMargin;
+        added = adj.added;
+        boxEnd = duo.width - parentPadding - appliedMargin;
+      }
+      return { boxEnd, addedRight: added.right };
+    };
+
+    // View owns marginRight: 16 with gap: 16 -> ends at 382 - 16 = 366 (16 pt away from column).
+    expect(simulateMargin({ ownMargin: 16, gap: 16 })).toEqual({
+      boxEnd: 382 - 16,
+      addedRight: 84,
+    });
+    // Parent owns paddingRight: 16, view has no margin, gap: 16 -> same 366.
+    expect(
+      simulateMargin({ ownMargin: 0, parentPadding: 16, gap: 16 })
+    ).toEqual({
+      boxEnd: 382 - 16,
+      addedRight: 84,
+    });
+    // Own margin already clears column slightly (6 pt away), gap: 16 -> pushed 10 pt further to 366.
+    expect(simulateMargin({ ownMargin: 90, gap: 16 })).toEqual({
+      boxEnd: 382 - 16,
+      addedRight: 10,
+    });
+    // Own margin already further than gap: 16 -> keeps its own 120 pt margin.
+    expect(simulateMargin({ ownMargin: 120, gap: 16 })).toEqual({
+      boxEnd: 466 - 120,
+      addedRight: 0,
+    });
+    // Without gap, even with maximum edge mode, box ends at 382 and never overlaps the column.
+    expect(
+      simulateMargin({ ownMargin: 16, edges: { right: 'maximum' } })
+    ).toEqual({
+      boxEnd: 382,
+      addedRight: 68,
+    });
   });
 });
 

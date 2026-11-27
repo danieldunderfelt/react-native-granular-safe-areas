@@ -78,6 +78,13 @@ export function parseMetrics(json: string | null | undefined) {
   } catch {
     return null;
   }
+  return parseMetricsObject(data);
+}
+
+/** Parses an already-decoded metrics object, such as the one inside {@link getDiagnostics}. */
+export function parseMetricsObject(
+  data: unknown
+): GranularSafeAreaMetrics | null {
   if (!isObject(data)) return null;
   const width = num(data.width);
   const height = num(data.height);
@@ -121,6 +128,12 @@ export function parseMetrics(json: string | null | undefined) {
     data.horizontalSizeClass === 'regular'
   ) {
     metrics.horizontalSizeClass = data.horizontalSizeClass;
+  }
+  if (typeof data.deviceModel === 'string' && data.deviceModel.length > 0) {
+    metrics.deviceModel = data.deviceModel;
+  }
+  if (typeof data.systemVersion === 'string' && data.systemVersion.length > 0) {
+    metrics.systemVersion = data.systemVersion;
   }
   const windowControls = parseRect(data.windowControls);
   if (windowControls) metrics.windowControls = windowControls;

@@ -34,9 +34,8 @@ It does more than the Duo needs, on every iPhone:
 It builds on [react-native-safe-area-context](https://github.com/appandflow/react-native-safe-area-context) and
 re-exports all of it, so one import covers every safe-area need. Its `SafeAreaView` is a drop-in for that library's.
 
-> **Status: early.** Built and tested on the iPhone Duo simulator (Xcode 27.2, iOS 27.2) in every pose, on the
-> iPhone 18 Pro and iPad Pro simulators, and on the Pixel 10 emulator (Android 17). It has not run on a physical Duo
-> yet.
+> **Status: early.** Built and tested on the iPhone Duo (physical hardware and simulator, Xcode 27.2, iOS 27.2), on the
+> iPhone 18 Pro and iPad Pro simulators, and on the Pixel 10 emulator (Android 17).
 
 ## Requirements
 
@@ -382,6 +381,15 @@ const top = camera ? camera.y + camera.height / 2 - BUTTON_SIZE / 2 : 12;
 on the iPhone Duo (closed, or open in landscape), `'top'` in an iPad window of regular width, and `'bottom'`
 everywhere else, Android and the web included. Use it to put a tab bar of your own where the system's would go.
 
+`useSafeAreaDevice()` exposes the classified device type (`'phone'`, `'tablet'`, `'foldable'`, `'desktop'`, `'web'`,
+or `'unknown'`), posture (`'standard'`, `'folded'`, `'unfolded'`, `'half-opened'`, `'windowed'`), native hardware/OS
+identifiers (`model`, `systemVersion`), and `granularSupported`. It only re-renders when those values change:
+
+```tsx
+const device = useSafeAreaDevice();
+// On iPhone Duo closed: { type: 'foldable', posture: 'folded', hasVerticalBar: true, granularSupported: true, model: 'iPhone19,4', systemVersion: '27.2', ... }
+```
+
 **Floating UI above whichever tab bar there is** doesn't need it, though. UIKit's tab bar is a `controls` region
 wherever it is, so a granular view in `offset` mode moves clear of it by exactly as much as it overlaps:
 
@@ -674,11 +682,35 @@ plain `View`s: nothing is laid out in Jest, so there's nothing for them to measu
 The geometry behind the components (`buildRegions`, `safeAreaViewInsets`, `parseMetrics`, ...) is exported from
 `react-native-granular-safe-areas/testing`, for tests and tools.
 
-**Diagnostics.** `getDiagnostics()` returns everything the native side can see for every window: insets,
-corner-adapted insets, the status bar, reserved regions (including inactive ones and their margins),
-`verticalBarEdge`, bar layout regions at several widths, the view controller tree, and the UIKit views near each side
-edge. Attach it to bug reports. The example app's **Probe** screen collects it, logs it to the Metro terminal, and can
-share it.
+**Diagnostics, band fallback and external logging.** When granular safe areas aren't available (unlinked native module,
+older OS/SDK, or unrecognized system bars), the library falls back to whole-band avoidance and logs a one-time warning
+in `__DEV__`.
+
+For production monitoring and customer support debugging (e.g. Datadog or Sentry), call `useSafeAreaDiagnostics()` near
+the root of your app. It verifies that the native bridge and visible system bar controls registered properly after
+mount, structural layout changes, and foregrounding; if a device fails verification, it automatically switches to
+whole-band avoidance (restoring granular regions on recovery) and invokes `onIssue` with a compact, structured report:
+
+```tsx
+import { useSafeAreaDiagnostics } from 'react-native-granular-safe-areas';
+import { DdLogs } from '@datadog/mobile-react-native';
+
+useSafeAreaDiagnostics({
+  onIssue: (report) => {
+    DdLogs.warn('Granular safe areas unavailable', {
+      reason: report.reason,
+      summary: report.summary,
+      device: report.device,
+      failedChecks: report.failedChecks,
+      fallbackToBands: report.fallbackToBands,
+    });
+  },
+});
+```
+
+You can also inspect raw native state directly with `getDiagnostics()` and `checkDiagnostics(diagnostics, { metrics })`.
+The example app's **Probe** screen displays `useSafeAreaDevice()`, runs `checkDiagnostics()`, logs the JSON to the
+Metro terminal, and can share it.
 
 ## Platforms
 

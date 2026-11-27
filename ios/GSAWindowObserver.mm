@@ -55,6 +55,34 @@
 
 @end
 
+UIWindow *_Nullable GSAAppWindow(void)
+{
+  UIWindow *key = RCTKeyWindow();
+  if (key != nil && !key.hidden && key.windowLevel == UIWindowLevelNormal && key.rootViewController != nil) {
+    return key;
+  }
+  UIWindow *fallback = nil;
+  for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+    if (![scene isKindOfClass:UIWindowScene.class]) {
+      continue;
+    }
+    UIWindowScene *windowScene = (UIWindowScene *)scene;
+    BOOL active = scene.activationState == UISceneActivationStateForegroundActive;
+    for (UIWindow *window in windowScene.windows) {
+      if (window.hidden || window.windowLevel != UIWindowLevelNormal || window.rootViewController == nil) {
+        continue;
+      }
+      if (active && window.isKeyWindow) {
+        return window;
+      }
+      if (fallback == nil || active) {
+        fallback = window;
+      }
+    }
+  }
+  return fallback ?: key;
+}
+
 @implementation GSAWindowObserver {
   GSAWindowObserverView *_Nullable _view;
   void (^_Nullable _onChange)(NSString *payload);
@@ -70,43 +98,66 @@
   return shared;
 }
 
+- (instancetype)init
+{
+  if (self = [super init]) {
+    // Keep following key-window changes: a transient splash, dev-launcher or alert window may be key early in launch,
+    // or a reload/scene transition may replace the window.
+    [NSNotificationCenter.defaultCenter addObserver:self
+                                           selector:@selector(windowDidChange:)
+                                               name:UIWindowDidBecomeKeyNotification
+                                             object:nil];
+    [NSNotificationCenter.defaultCenter addObserver:self
+                                           selector:@selector(windowDidChange:)
+                                               name:UIWindowDidBecomeVisibleNotification
+                                             object:nil];
+  }
+  return self;
+}
+
+- (void)dealloc
+{
+  [NSNotificationCenter.defaultCenter removeObserver:self];
+}
+
 - (void)startWithHandler:(void (^)(NSString *payload))onChange
 {
   _onChange = [onChange copy];
-  if (_view != nil) {
+  if ([self attachIfNeeded]) {
     [_view.monitor resetReported];
-    return;
-  }
-  if (![self attach]) {
-    // No window yet, early in launch: try again when one becomes key.
-    [NSNotificationCenter.defaultCenter addObserver:self
-                                           selector:@selector(windowDidBecomeKey:)
-                                               name:UIWindowDidBecomeKeyNotification
-                                             object:nil];
   }
 }
 
-- (void)windowDidBecomeKey:(NSNotification *)notification
+- (void)windowDidChange:(NSNotification *)notification
 {
-  if ([self attach]) {
-    [NSNotificationCenter.defaultCenter removeObserver:self name:UIWindowDidBecomeKeyNotification object:nil];
+  if (_onChange != nil) {
+    [self attachIfNeeded];
   }
 }
 
-- (BOOL)attach
+- (BOOL)attachIfNeeded
 {
-  UIWindow *window = RCTKeyWindow();
+  UIWindow *window = GSAAppWindow();
   if (window == nil) {
     return NO;
   }
-  __weak __typeof(self) weakSelf = self;
-  _view = [[GSAWindowObserverView alloc] initWithFrame:window.bounds
-                                              onChange:^(NSString *payload) {
-                                                __typeof(self) strongSelf = weakSelf;
-                                                if (strongSelf != nil && strongSelf->_onChange != nil) {
-                                                  strongSelf->_onChange(payload);
-                                                }
-                                              }];
+  if (_view != nil && _view.window == window) {
+    return YES;
+  }
+  if (_view != nil) {
+    [_view.monitor stop];
+    [_view removeFromSuperview];
+    _view.frame = window.bounds;
+  } else {
+    __weak __typeof(self) weakSelf = self;
+    _view = [[GSAWindowObserverView alloc] initWithFrame:window.bounds
+                                                onChange:^(NSString *payload) {
+                                                  __typeof(self) strongSelf = weakSelf;
+                                                  if (strongSelf != nil && strongSelf->_onChange != nil) {
+                                                    strongSelf->_onChange(payload);
+                                                  }
+                                                }];
+  }
   // Behind everything, so it never covers anything, including views presented later.
   [window insertSubview:_view atIndex:0];
   return YES;
@@ -114,7 +165,9 @@
 
 - (void)refresh
 {
-  [_view.monitor refresh];
+  if ([self attachIfNeeded]) {
+    [_view.monitor refresh];
+  }
 }
 
 @end

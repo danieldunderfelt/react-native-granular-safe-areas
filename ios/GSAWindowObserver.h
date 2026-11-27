@@ -2,6 +2,9 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+/// The app's primary visible normal-level window, preferring the key window, falling back to `RCTKeyWindow()`.
+FOUNDATION_EXTERN UIWindow *_Nullable GSAAppWindow(void);
+
 /// Stands in for a provider when the app has none: an empty view behind everything in the app's window, following the
 /// window's metrics (`GSAMetricsForView`) the way a provider follows its own, and handing them to `onChange` as JSON.
 /// It ignores touches and accessibility, and fills the window, so its metrics are the window's.

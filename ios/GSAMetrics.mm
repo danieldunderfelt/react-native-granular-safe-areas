@@ -49,6 +49,25 @@ static UIWindow *_Nullable GSAWindowOf(UIView *view)
   return [view isKindOfClass:UIWindow.class] ? (UIWindow *)view : view.window;
 }
 
+static NSString *GSADeviceModel(void)
+{
+  static NSString *model = nil;
+  static dispatch_once_t onceToken;
+  dispatch_once(&onceToken, ^{
+#if TARGET_OS_SIMULATOR
+    NSString *sim = NSProcessInfo.processInfo.environment[@"SIMULATOR_MODEL_IDENTIFIER"];
+    if (sim.length > 0) {
+      model = sim;
+      return;
+    }
+#endif
+    struct utsname systemInfo;
+    uname(&systemInfo);
+    model = @(systemInfo.machine);
+  });
+  return model;
+}
+
 static NSString *_Nullable GSAVerticalBarEdgeName(UITraitCollection *traits)
 {
 #if GSA_HAS_IOS_27_1_SDK
@@ -147,13 +166,17 @@ static void GSACollectFloatingBarItems(UIView *view, UIView *container, NSMutabl
     return;
   }
   CGSize containerSize = container.bounds.size;
+  if ((containerSize.width <= 1 || containerSize.height <= 1) && container.window != nil) {
+    containerSize = container.window.bounds.size;
+  }
   for (UIView *subview in view.subviews) {
     if (subview.hidden || subview.alpha < 0.01) {
       continue;
     }
     CGRect frame = [container convertRect:subview.bounds fromView:subview];
     BOOL wrapper = CGRectIsEmpty(frame) ||
-        (frame.size.width >= containerSize.width - 1 && frame.size.height >= containerSize.height - 1);
+        (containerSize.width > 1 && containerSize.height > 1 && frame.size.width >= containerSize.width - 1 &&
+         frame.size.height >= containerSize.height - 1);
     if (wrapper) {
       GSACollectFloatingBarItems(subview, container, items, depth + 1);
     } else {
@@ -340,6 +363,8 @@ NSDictionary *_Nullable GSAMetricsForView(UIView *view, GSAWindowBars *_Nullable
   metrics[@"idiom"] = traits.userInterfaceIdiom == UIUserInterfaceIdiomPad ? @"pad" : @"phone";
   metrics[@"horizontalSizeClass"] =
       traits.horizontalSizeClass == UIUserInterfaceSizeClassRegular ? @"regular" : @"compact";
+  metrics[@"deviceModel"] = GSADeviceModel();
+  metrics[@"systemVersion"] = UIDevice.currentDevice.systemVersion;
 
   NSValue *statusBar = GSAStatusBarFrame(view);
   if (statusBar != nil) {

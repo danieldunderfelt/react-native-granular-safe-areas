@@ -1,4 +1,11 @@
 import {
+  deviceInfoEqual,
+  getDeviceInfo,
+  UNKNOWN_DEVICE,
+  type SafeAreaDeviceInfo,
+} from './device';
+import {
+  buildRegions,
   getSystemControls,
   getVerticalBar,
   rectsEqual,
@@ -39,6 +46,10 @@ export type GranularSafeAreaSnapshot = {
   systemControls: SystemControls | null;
   /** The back button shown in the vertical bar, if any. */
   backButton: BackButtonState | null;
+  /** Classified device form factor, posture, and granular safe-area capability. */
+  device: SafeAreaDeviceInfo;
+  /** `true` while runtime band-avoidance fallback is forced (e.g. after a diagnostic check failure). */
+  fallbackToBands: boolean;
   /** Bumped whenever elements need to recompute: new regions, or the provider itself moved or resized. */
   version: number;
 };
@@ -69,10 +80,14 @@ export class GranularSafeAreaStore {
     metrics: null,
     systemControls: null,
     backButton: null,
+    device: UNKNOWN_DEVICE,
+    fallbackToBands: false,
     version: 0,
   };
   private baseRegions: readonly SafeAreaRegion[] = [];
   private baseBands: readonly SafeAreaRegion[] = [];
+  private fallbackToBands = false;
+  private mocked = false;
   private readonly accessories = new Map<number, SafeAreaRegion>();
   private readonly accessoryNodes = new Map<number, HostInstance>();
   /** The owner id of the vertical bar back button's region: the button view registers under it natively. */
@@ -118,11 +133,32 @@ export class GranularSafeAreaStore {
   publish(
     regions: readonly SafeAreaRegion[],
     metrics: GranularSafeAreaMetrics | null,
-    bands: readonly SafeAreaRegion[] = regions
+    bands: readonly SafeAreaRegion[] = metrics
+      ? buildRegions(metrics, { granular: false })
+      : regions
   ) {
     this.baseRegions = regions;
     this.baseBands = bands;
     this.update(metrics);
+  }
+
+  /**
+   * Forces every consumer (including `granular` and `dynamic` views) to avoid whole inset bands instead of refined
+   * regions — e.g. when runtime diagnostics detect missing system controls. Pass `false` to resume granular regions.
+   */
+  setFallbackToBands(enabled: boolean) {
+    if (this.fallbackToBands === enabled) return;
+    this.fallbackToBands = enabled;
+    this.update(this.snapshot.metrics);
+  }
+
+  /** Whether this store is driven by `<GranularSafeAreaProvider mock={...}>` rather than live native metrics. */
+  get isMocked(): boolean {
+    return this.mocked;
+  }
+
+  setMocked(mocked: boolean) {
+    this.mocked = mocked;
   }
 
   /** The provider moved or resized: elements must measure again even though the regions are the same. */
@@ -206,7 +242,9 @@ export class GranularSafeAreaStore {
 
   private update(metrics: GranularSafeAreaMetrics | null) {
     const previous = this.snapshot;
-    const verticalBar = metrics ? getVerticalBar(metrics) : null;
+    const fallingBack = this.fallbackToBands;
+    const verticalBar =
+      !fallingBack && metrics ? getVerticalBar(metrics) : null;
     const active = this.activeBackButton();
     const frame =
       verticalBar && active ? verticalBarBackButtonFrame(verticalBar) : null;
@@ -239,23 +277,29 @@ export class GranularSafeAreaStore {
         : [];
     // Accessories float over the content anywhere, never inside a band, so they're in both lists.
     const accessories = [...this.accessories.values()];
-    const regions =
-      backButtonRegions.length + accessories.length > 0
-        ? [...this.baseRegions, ...backButtonRegions, ...accessories]
-        : this.baseRegions;
     const bands =
       accessories.length > 0
         ? [...this.baseBands, ...accessories]
         : this.baseBands;
+    const regions = fallingBack
+      ? bands
+      : backButtonRegions.length + accessories.length > 0
+        ? [...this.baseRegions, ...backButtonRegions, ...accessories]
+        : this.baseRegions;
+    const device = getDeviceInfo(metrics, { fallbackToBands: fallingBack });
 
     const regionsChanged = !regionsEqual(previous.regions, regions);
     const bandsChanged = !regionsEqual(previous.bands, bands);
     const metricsChanged =
       JSON.stringify(previous.metrics) !== JSON.stringify(metrics);
+    const deviceChanged = !deviceInfoEqual(previous.device, device);
+    const fallbackChanged = previous.fallbackToBands !== fallingBack;
     if (
       !regionsChanged &&
       !bandsChanged &&
       !metricsChanged &&
+      !deviceChanged &&
+      !fallbackChanged &&
       backButtonsEqual(previous.backButton, backButton)
     ) {
       return;
@@ -264,8 +308,9 @@ export class GranularSafeAreaStore {
       regions: regionsChanged ? regions : previous.regions,
       bands: bandsChanged ? bands : previous.bands,
       metrics,
-      systemControls:
-        metricsChanged || regionsChanged
+      systemControls: fallingBack
+        ? null
+        : metricsChanged || regionsChanged || fallbackChanged
           ? metrics
             ? getSystemControls(metrics, backButton ? [backButton.frame] : [])
             : null
@@ -273,8 +318,10 @@ export class GranularSafeAreaStore {
       backButton: backButtonsEqual(previous.backButton, backButton)
         ? previous.backButton
         : backButton,
+      device: deviceChanged ? device : previous.device,
+      fallbackToBands: fallingBack,
       version:
-        regionsChanged || bandsChanged || metricsChanged
+        regionsChanged || bandsChanged || metricsChanged || fallbackChanged
           ? previous.version + 1
           : previous.version,
     };

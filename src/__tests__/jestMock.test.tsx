@@ -15,6 +15,8 @@ import {
   GranularSafeAreaProvider,
   mockSafeAreaMetrics,
   SystemBackButton,
+  useSafeAreaDevice,
+  useSafeAreaDiagnostics,
   useSafeAreaInsetsFor,
   useSystemControls,
   useSystemHeaderItems,
@@ -51,6 +53,8 @@ function Probe({ onRender }: { onRender: (value: unknown) => void }) {
     controls: useSystemControls()?.edge ?? null,
     header: useSafeAreaInsetsFor({ top: 0, height: 56 }, { granular: true })
       .right,
+    deviceType: useSafeAreaDevice().type,
+    devicePosture: useSafeAreaDevice().posture,
   });
   return null;
 }
@@ -68,6 +72,8 @@ describe('the Jest mock', () => {
       edge: 'bottom',
       controls: null,
       header: 0,
+      deviceType: 'unknown',
+      devicePosture: 'standard',
     });
   });
 
@@ -82,6 +88,8 @@ describe('the Jest mock', () => {
       edge: 'right',
       controls: 'right',
       header: 84,
+      deviceType: 'foldable',
+      devicePosture: 'folded',
     });
   });
 
@@ -90,8 +98,32 @@ describe('the Jest mock', () => {
     const seen = jest.fn();
     render(<Probe onRender={seen} />);
     expect(seen).toHaveBeenLastCalledWith(
-      expect.objectContaining({ edge: 'top' })
+      expect.objectContaining({
+        edge: 'top',
+        deviceType: 'tablet',
+        devicePosture: 'standard',
+      })
     );
+  });
+
+  it('provides a no-op useSafeAreaDiagnostics stand-in in Jest', async () => {
+    mockSafeAreaMetrics(fixtures.iPhoneDuoInnerBookFold);
+    const onCheck = jest.fn();
+    let diag!: ReturnType<typeof useSafeAreaDiagnostics>;
+    function DiagProbe() {
+      diag = useSafeAreaDiagnostics({ onCheck });
+      return null;
+    }
+    render(<DiagProbe />);
+    expect(diag.report).toBeNull();
+    expect(diag.fallbackActive).toBe(false);
+    const result = await diag.checkNow();
+    expect(result.ok).toBe(true);
+    expect(result.device).toMatchObject({
+      type: 'foldable',
+      posture: 'half-opened',
+    });
+    expect(onCheck).toHaveBeenCalledTimes(1);
   });
 
   it('shows your own back button where the system has no place for one', () => {

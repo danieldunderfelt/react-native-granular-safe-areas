@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from 'react';
 import {
+  Platform,
   StyleSheet,
   type HostInstance,
   type LayoutChangeEvent,
@@ -20,6 +21,7 @@ import {
   SafeAreaFrameContext,
   SafeAreaInsetsContext,
 } from 'react-native-safe-area-context';
+import { detectMetricsFallback, warnGranularUnavailable } from './fallback';
 import {
   buildRegions,
   metricsForSubrect,
@@ -31,6 +33,7 @@ import { parseMetrics } from './metrics';
 import {
   BackButtonStandIn,
   getInitialWindowMetricsJSON,
+  isNativeModuleAvailable,
   nativeHostsBackButton,
   NativeProviderView,
   refreshNativeProvider,
@@ -141,12 +144,15 @@ export function GranularSafeAreaProvider({
     const windowMetrics = isNested ? null : getInitialWindowMetrics();
     if (windowMetrics) return metricsForSubrect(windowMetrics, layout);
     // Platforms without granular metrics: plain bands from react-native-safe-area-context.
+    const fallbackPlatform: GranularSafeAreaMetrics['platform'] =
+      Platform.OS === 'ios' || Platform.OS === 'android' ? Platform.OS : 'web';
     if (safeAreaInsets && safeAreaFrame) {
       return metricsForSubrect(
         metricsFromInsets(
           safeAreaFrame.width,
           safeAreaFrame.height,
-          safeAreaInsets
+          safeAreaInsets,
+          fallbackPlatform
         ),
         {
           ...layout,
@@ -155,7 +161,12 @@ export function GranularSafeAreaProvider({
         }
       );
     }
-    return metricsFromInsets(layout.width, layout.height, ZERO_INSETS);
+    return metricsFromInsets(
+      layout.width,
+      layout.height,
+      ZERO_INSETS,
+      fallbackPlatform
+    );
   }, [mock, nativeMetrics, layout, isNested, safeAreaInsets, safeAreaFrame]);
 
   const regions = useMemo(
@@ -170,8 +181,26 @@ export function GranularSafeAreaProvider({
   // Children's layout effects run before this one, so on mount they measure, then measure again here. Both happen
   // before the first frame is painted.
   useLayoutEffect(() => {
+    store.setMocked(Boolean(mock));
     store.publish(regions, metrics, bands);
-  }, [store, regions, metrics, bands]);
+  }, [store, mock, regions, metrics, bands]);
+
+  useEffect(() => {
+    if (mock) return;
+    if (
+      !isNativeModuleAvailable &&
+      (Platform.OS === 'ios' || Platform.OS === 'android')
+    ) {
+      warnGranularUnavailable(
+        'native-unavailable',
+        `Native GranularSafeAreas module is unavailable on ${Platform.OS} (not linked or unsupported runtime).`
+      );
+      return;
+    }
+    if (!metrics) return;
+    const fallback = detectMetricsFallback(metrics);
+    if (fallback) warnGranularUnavailable(fallback.reason, fallback.message);
+  }, [mock, metrics]);
 
   return (
     <GranularSafeAreaContext.Provider value={store}>

@@ -191,4 +191,70 @@ describe('GranularSafeAreaStore', () => {
     store.publish(buildRegions(duo), duo);
     expect(listener).not.toHaveBeenCalled();
   });
+
+  describe('band fallback mode', () => {
+    it('switches regions to whole bands while preserving accessories, and restores granular regions when cleared', () => {
+      const { store, listener } = makeStore();
+      const plainDuo = fixtures.iPhoneDuoOuterPortrait;
+      const accessory = {
+        kind: 'accessory' as const,
+        edge: 'bottom' as const,
+        frame: { x: 12, y: 560, width: 442, height: 70 },
+        owner: -10,
+      };
+      store.publish(
+        buildRegions(plainDuo),
+        plainDuo,
+        buildRegions(plainDuo, { granular: false })
+      );
+      store.setAccessory(accessory.owner, accessory);
+      const id = store.createBackButtonId();
+      store.registerBackButton(id, {
+        onPress: jest.fn(),
+        icon: 'back',
+        accessibilityLabel: 'Back',
+        enabled: true,
+        inWindow: true,
+      });
+
+      expect(store.getSnapshot().device).toMatchObject({
+        type: 'foldable',
+        posture: 'folded',
+        granularSupported: true,
+      });
+      expect(store.getSnapshot().backButton).not.toBeNull();
+      expect(store.getSnapshot().systemControls).not.toBeNull();
+
+      listener.mockClear();
+      store.setFallbackToBands(true);
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect(store.getSnapshot().fallbackToBands).toBe(true);
+      expect(store.getSnapshot().regions.map((r) => r.kind)).toEqual([
+        'inset',
+        'inset',
+        'accessory',
+      ]);
+      expect(store.getSnapshot().backButton).toBeNull();
+      expect(store.getSnapshot().systemControls).toBeNull();
+      expect(store.getSnapshot().device.granularSupported).toBe(false);
+
+      // Re-setting the same value is a no-op.
+      store.setFallbackToBands(true);
+      expect(listener).toHaveBeenCalledTimes(1);
+
+      // Clearing restores granular regions, back button, system controls, and granularSupported.
+      store.setFallbackToBands(false);
+      expect(listener).toHaveBeenCalledTimes(2);
+      expect(store.getSnapshot().fallbackToBands).toBe(false);
+      expect(store.getSnapshot().regions.map((r) => r.kind)).toEqual([
+        'status',
+        'inset',
+        'controls',
+        'accessory',
+      ]);
+      expect(store.getSnapshot().backButton?.owner).toBe(id);
+      expect(store.getSnapshot().systemControls).not.toBeNull();
+      expect(store.getSnapshot().device.granularSupported).toBe(true);
+    });
+  });
 });

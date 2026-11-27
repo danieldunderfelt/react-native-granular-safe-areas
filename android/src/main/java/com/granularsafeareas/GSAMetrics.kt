@@ -147,6 +147,8 @@ internal object GSAMetrics {
             .put("captionTransparent", appearance(view) and TRANSPARENT_CAPTION != 0)
             .put("corners", corners)
 
+    val idiom = if (view.resources.configuration.smallestScreenWidthDp >= 600) "pad" else "phone"
+
     return JSONObject()
         .put("platform", "android")
         .put("width", dp(width))
@@ -162,6 +164,9 @@ internal object GSAMetrics {
         .put("barContainersVisible", false)
         .put("barItemsKnown", false)
         .put("reservedRegionsSupported", false)
+        .put("idiom", idiom)
+        .put("deviceModel", "${Build.MANUFACTURER} ${Build.MODEL}")
+        .put("systemVersion", Build.VERSION.SDK_INT.toString())
         .put("android", android)
   }
 

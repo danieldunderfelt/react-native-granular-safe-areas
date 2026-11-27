@@ -1,7 +1,10 @@
+import { Platform } from 'react-native';
+import { detectMetricsFallback, warnGranularUnavailable } from './fallback';
 import { buildRegions } from './geometry';
 import { parseMetrics } from './metrics';
 import {
   getInitialWindowMetricsJSON,
+  isNativeModuleAvailable,
   observeWindowMetrics,
   refreshWindowMetrics,
 } from './nativeBridge';
@@ -20,8 +23,21 @@ export function getDefaultStore(): GranularSafeAreaStore {
   if (defaultStore) return defaultStore;
   let window: Rect | null = null;
   const store = new GranularSafeAreaStore(() => window, refreshWindowMetrics);
+  const nativeMissing =
+    !isNativeModuleAvailable &&
+    (Platform.OS === 'ios' || Platform.OS === 'android');
+  if (nativeMissing) {
+    warnGranularUnavailable(
+      'native-unavailable',
+      `Native GranularSafeAreas module is unavailable on ${Platform.OS} (not linked or unsupported runtime).`
+    );
+  }
   const publish = (metrics: GranularSafeAreaMetrics) => {
     window = { x: 0, y: 0, width: metrics.width, height: metrics.height };
+    if (!nativeMissing) {
+      const fallback = detectMetricsFallback(metrics);
+      if (fallback) warnGranularUnavailable(fallback.reason, fallback.message);
+    }
     store.publish(
       buildRegions(metrics),
       metrics,

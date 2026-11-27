@@ -34,7 +34,7 @@
   // first frame is laid out with real regions.
   __block NSString *json = @"";
   RCTUnsafeExecuteOnMainQueueSync(^{
-    UIWindow *window = RCTKeyWindow();
+    UIWindow *window = GSAAppWindow();
     NSDictionary *metrics = window != nil ? GSAMetricsForView(window, nil) : nil;
     if (metrics != nil) {
       json = GSAJSONString(metrics);

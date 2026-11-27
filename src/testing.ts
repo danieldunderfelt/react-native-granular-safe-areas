@@ -15,6 +15,25 @@ export {
   type SafeAreaViewInsetsOptions,
   type SystemControls,
 } from './geometry';
+export {
+  getDeviceInfo,
+  type GetDeviceInfoOptions,
+  type SafeAreaDeviceInfo,
+  type SafeAreaDevicePosture,
+  type SafeAreaDeviceType,
+} from './device';
+export {
+  detectMetricsFallback,
+  type SafeAreaFallbackInfo,
+  type SafeAreaUnavailableReason,
+} from './fallback';
+export {
+  checkDiagnostics,
+  type CheckDiagnosticsOptions,
+  type DiagnosticCheck,
+  type DiagnosticCheckStatus,
+  type DiagnosticsCheckResult,
+} from './diagnosticsCheck';
 export { parseMetrics } from './metrics';
 export { fixtures, type FixtureName } from './fixtures';
 export { useGranularSafeAreaMetrics, useGranularSafeAreaStore } from './hooks';

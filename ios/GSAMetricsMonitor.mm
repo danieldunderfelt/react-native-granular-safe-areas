@@ -38,11 +38,15 @@ static const NSTimeInterval GSAWatchdogInterval = 1.0;
     _onChange = [onChange copy];
     if (@available(iOS 17.0, *)) {
       // Poses change the size classes; a right-to-left switch changes which side "trailing" is.
-      [view registerForTraitChanges:@[
+      NSMutableArray<UITrait> *traits = [@[
         UITraitHorizontalSizeClass.class, UITraitVerticalSizeClass.class, UITraitLayoutDirection.class
-      ]
-                         withTarget:self
-                             action:@selector(refresh)];
+      ] mutableCopy];
+#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 270100
+      if (@available(iOS 27.1, *)) {
+        [traits addObjectsFromArray:UITraitCollection.systemTraitsAffectingVerticalBarEdge];
+      }
+#endif
+      [view registerForTraitChanges:traits withTarget:self action:@selector(refresh)];
     }
     // Anything can have changed while the app was in the background, e.g. a Live Activity started.
     [NSNotificationCenter.defaultCenter addObserver:self

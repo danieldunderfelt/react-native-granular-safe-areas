@@ -10,6 +10,9 @@ import type { NativeProps } from './specs/GranularSafeAreaProviderViewNativeComp
 // Platforms without a native side: the web, and any other platform React Native runs on. The provider falls back to
 // the regular insets from react-native-safe-area-context, so everything behaves like a regular safe area.
 
+/** `false` on web and platforms without a native GranularSafeAreas implementation. */
+export const isNativeModuleAvailable = false;
+
 export function NativeProviderView({
   onMetricsChange: _onMetricsChange,
   ...props

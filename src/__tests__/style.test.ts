@@ -76,11 +76,30 @@ describe('layoutAdjustment', () => {
     ).toEqual({ paddingRight: 84 });
   });
 
-  it('applies margins the same way', () => {
+  it('applies margins, adding the overlap measured inside the view’s own margin even with maximum', () => {
     expect(
       layoutAdjustment({ marginStart: 4, marginEnd: 8 }, right, 'margin', all)
         .style
     ).toEqual({ marginEnd: 92 });
+
+    // With marginRight: 16 and gap: 16 against an 84 pt column, the box at 450 overlaps the 100 pt zone by 84 pt.
+    // Adding 84 to the view's own 16 gives marginRight: 100 (ending 16 pt from the column) instead of max(16, 84) = 84.
+    const maximum = edgeModes({ right: 'maximum' });
+    expect(
+      layoutAdjustment({ marginHorizontal: 16 }, right, 'margin', maximum)
+    ).toEqual({
+      style: { marginRight: 100 },
+      added: { top: 0, right: 84, bottom: 0, left: 0 },
+    });
+
+    // Without gap, the box at 450 overlaps the 84 pt column by 68 pt: 16 + 68 = 84 clears the column instead of 68.
+    const overlap = { top: 0, right: 68, bottom: 0, left: 0 };
+    expect(
+      layoutAdjustment({ marginRight: 16 }, overlap, 'margin', maximum)
+    ).toEqual({
+      style: { marginRight: 84 },
+      added: { top: 0, right: 68, bottom: 0, left: 0 },
+    });
   });
 
   describe('right to left', () => {
