@@ -414,11 +414,10 @@ const headerEntries: HeaderEntry[] = [];
 export function useSystemHeaderItems(options: MockHeaderOptions = {}): {
   shown: boolean;
 } {
-  const { metrics } = useSnapshot();
+  const { metrics, fallbackToBands } = useSnapshot();
+  const bar = !fallbackToBands && metrics ? getVerticalBar(metrics) : null;
   const shown =
-    (options.enabled ?? true) &&
-    metrics !== null &&
-    getVerticalBar(metrics) !== null;
+    (options.enabled ?? true) && bar !== null && bar.acceptsControls;
   const entry = useRef<HeaderEntry>({ options, shown });
   useLayoutEffect(() => {
     entry.current.options = options;

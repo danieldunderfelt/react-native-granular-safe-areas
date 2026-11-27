@@ -121,6 +121,14 @@ export function parseMetricsObject(
     barItemsKnown: data.barItemsKnown === true,
     reservedRegionsSupported: data.reservedRegionsSupported === true,
   };
+  if (
+    data.tabBarEdge === 'top' ||
+    data.tabBarEdge === 'right' ||
+    data.tabBarEdge === 'bottom' ||
+    data.tabBarEdge === 'left'
+  ) {
+    metrics.tabBarEdge = data.tabBarEdge;
+  }
   if (data.idiom === 'phone' || data.idiom === 'pad')
     metrics.idiom = data.idiom;
   if (

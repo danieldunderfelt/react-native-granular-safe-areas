@@ -42,16 +42,27 @@ describe('getDeviceInfo', () => {
     expect(getDeviceInfo(fixtures.iPhoneDuoInnerLandscape)).toMatchObject({
       type: 'foldable',
       posture: 'unfolded',
-      hasVerticalBar: true,
+      hasVerticalBar: false,
       hasFold: true,
       isFoldActive: false,
       granularSupported: true,
     });
 
+    expect(
+      getDeviceInfo({
+        ...fixtures.iPhoneDuoInnerLandscape,
+        tabBarEdge: 'right',
+      })
+    ).toMatchObject({
+      type: 'foldable',
+      posture: 'unfolded',
+      hasVerticalBar: true,
+    });
+
     expect(getDeviceInfo(fixtures.iPhoneDuoInnerBookFold)).toMatchObject({
       type: 'foldable',
       posture: 'half-opened',
-      hasVerticalBar: true,
+      hasVerticalBar: false,
       hasFold: true,
       isFoldActive: true,
       granularSupported: true,

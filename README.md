@@ -377,9 +377,10 @@ const camera = controls?.cameras[0];
 const top = camera ? camera.y + camera.height / 2 - BUTTON_SIZE / 2 : 12;
 ```
 
-`useTabBarEdge()` says where the system puts a tab bar here, whether or not the app has one: `'right'` or `'left'`
-on the iPhone Duo (closed, or open in landscape), `'top'` in an iPad window of regular width, and `'bottom'`
-everywhere else, Android and the web included. Use it to put a tab bar of your own where the system's would go.
+`useTabBarEdge()` says where the system puts a tab bar here, whether or not the app has one: where UIKit actually
+placed its visible tab bar when present, `'right'` or `'left'` when UIKit uses the side column for bars (the iPhone Duo
+closed), `'top'` in an iPad window of regular width, and `'bottom'` everywhere else (including the Duo open in landscape
+and portrait, Android, and the web). Use it to put a tab bar of your own where the system's would go.
 
 `useSafeAreaDevice()` exposes the classified device type (`'phone'`, `'tablet'`, `'foldable'`, `'desktop'`, `'web'`,
 or `'unknown'`), posture (`'standard'`, `'folded'`, `'unfolded'`, `'half-opened'`, `'windowed'`), native hardware/OS
@@ -438,9 +439,9 @@ import { SystemBackButton } from 'react-native-granular-safe-areas';
 </SystemBackButton>
 ```
 
-Where the system has a place for it (the Duo closed, or open in landscape), your button is hidden and a system glass
+Where the system puts bar controls in the side column (the Duo closed), your button is hidden and a system glass
 button shows there, at the size UIKit uses for its own (`48 × 48`, centered on the camera). Everywhere else, including
-a regular iPhone and the Duo open in portrait, your button stays as it is.
+a regular iPhone and the Duo open in landscape or portrait, your button stays as it is.
 
 - **Part of the screen.** The button is drawn in the screen it belongs to, so it slides in and out with it.
 - **Follows the status cluster**, and moves when it grows (a Live Activity).
@@ -504,7 +505,7 @@ function TripDetails() {
 }
 ```
 
-- **Where the system has a place for them** (the iPhone Duo closed, or open in landscape): UIKit's back button, and
+- **Where the system puts bar controls in the side column** (the iPhone Duo closed): UIKit's back button, and
   your items below it, in the vertical bar. Touches go through the empty header, and your own header still reaches the
   top. `shown` is `true`: hide your own back button and header buttons.
 - **Everywhere else** the screen gets `fallback`, `{ headerShown: false }` by default, and your header shows its own

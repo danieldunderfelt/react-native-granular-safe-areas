@@ -196,9 +196,50 @@ describe('gap, wherever the padding lives', () => {
 });
 
 describe('getTabBarEdge', () => {
-  it('is the vertical bar edge on the iPhone Duo', () => {
+  it('is the vertical bar edge on the iPhone Duo closed, and bottom when open in landscape', () => {
     expect(getTabBarEdge(fixtures.iPhoneDuoOuterPortrait)).toBe('right');
+    expect(getTabBarEdge(fixtures.iPhoneDuoOuterPortraitWithTabBar)).toBe(
+      'right'
+    );
     expect(getTabBarEdge(fixtures.iPhoneDuoOuterLandscape)).toBe('left');
+    expect(getTabBarEdge(fixtures.iPhoneDuoInnerLandscape)).toBe('bottom');
+    expect(getTabBarEdge(fixtures.iPhoneDuoInnerBookFold)).toBe('bottom');
+  });
+
+  it('follows UIKit’s actual tab bar placement when reported', () => {
+    expect(
+      getTabBarEdge({
+        ...fixtures.iPhoneDuoInnerLandscape,
+        tabBarEdge: 'bottom',
+        systemBars: [{ x: 250, y: 585, width: 451, height: 60 }],
+      })
+    ).toBe('bottom');
+    expect(
+      getTabBarEdge({
+        ...fixtures.iPhoneDuoInnerLandscape,
+        tabBarEdge: 'right',
+      })
+    ).toBe('right');
+    expect(
+      getTabBarEdge({
+        ...fixtures.iPhoneDuoOuterPortrait,
+        tabBarEdge: 'bottom',
+      })
+    ).toBe('bottom');
+    expect(
+      getTabBarEdge({
+        ...fixtures.iPhoneDuoOuterPortrait,
+        systemBars: [{ x: 80, y: 580, width: 300, height: 60 }],
+      })
+    ).toBe('bottom');
+    expect(
+      parseMetrics(
+        JSON.stringify({
+          ...fixtures.iPhoneDuoInnerLandscape,
+          tabBarEdge: 'bottom',
+        })
+      )?.tabBarEdge
+    ).toBe('bottom');
   });
 
   it('is the bottom without a vertical bar', () => {

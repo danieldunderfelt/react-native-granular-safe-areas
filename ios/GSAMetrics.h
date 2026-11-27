@@ -9,6 +9,7 @@ NS_ASSUME_NONNULL_BEGIN
 /// `barItemsKnown` whether floating bar containers were found, so `barViews` lists every bar item, even none.
 @interface GSAWindowBars : NSObject
 @property (nonatomic, readonly) NSArray<UIView *> *barViews;
+@property (nonatomic, readonly) NSArray<UIView *> *tabBarViews;
 @property (nonatomic, readonly) BOOL containersVisible;
 @property (nonatomic, readonly) BOOL barItemsKnown;
 /// Scans the window `view` is in, every presentation: the main app and any sheets or modals on top of it. Which of

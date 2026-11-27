@@ -1,5 +1,5 @@
 import { detectMetricsFallback } from './fallback';
-import { resolveVerticalBarEdge } from './geometry';
+import { usesVerticalBarForControls } from './geometry';
 import type { GranularSafeAreaMetrics } from './types';
 
 /** Broad device form factor derived from the platform's safe-area metrics. */
@@ -102,7 +102,7 @@ export function getDeviceInfo(
 
   const hasFold = metrics.divisions.length > 0;
   const isFoldActive = metrics.divisions.some((d) => d.active);
-  const hasVerticalBar = resolveVerticalBarEdge(metrics) !== null;
+  const hasVerticalBar = usesVerticalBarForControls(metrics);
   const idiom = metrics.idiom ?? null;
 
   const fallback =

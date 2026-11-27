@@ -8,7 +8,12 @@ import {
   parseOSVersion,
   type SafeAreaUnavailableReason,
 } from './fallback';
-import { buildRegions, overlaps, resolveVerticalBarEdge } from './geometry';
+import {
+  buildRegions,
+  overlaps,
+  resolveVerticalBarEdge,
+  usesVerticalBarForControls,
+} from './geometry';
 import { parseMetricsObject } from './metrics';
 import type {
   Edge,
@@ -271,7 +276,7 @@ function checkIOSVerticalBar(
   const columnControls = regions.filter(
     (r) => r.kind === 'controls' && r.edge === barEdge
   );
-  if (metrics.barContainersVisible) {
+  if (metrics.barContainersVisible && usesVerticalBarForControls(metrics)) {
     if (!metrics.barItemsKnown && columnControls.length === 0) {
       checks.push({
         id: 'floating-bar-container',

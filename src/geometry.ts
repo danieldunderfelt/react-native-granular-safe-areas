@@ -205,15 +205,17 @@ export function buildRegions(
     });
   }
 
-  // Bars outside a refined column, such as a navigation bar over a screen with a transparent header, are regions of
-  // their own. They follow the bar as it grows and shrinks.
+  // Bars outside a refined column, such as a navigation bar over a screen with a transparent header or a floating
+  // bottom tab bar, are regions of their own. They follow the bar as it grows and shrinks.
   for (const bar of metrics.systemBars) {
     if (inColumn.has(bar)) continue;
     const frame = intersection(bar, bounds);
     if (!frame || covered(frame)) continue;
     regions.push({
       kind: 'controls',
-      edge: attachedEdge(frame, width, height, insets),
+      edge:
+        attachedEdge(frame, width, height, insets) ??
+        nearestBarEdge(frame, width, height),
       frame,
       ...ownerOf(bar),
     });
@@ -261,8 +263,10 @@ function refineBand(
 
   const verticalBars = columnBars(band, metrics);
   // Without the floating bar containers, a visible bar container with no bar found in the column means the system
-  // put something there the native side didn't recognize.
+  // put something there the native side didn't recognize — unless UIKit isn't using the column for bars (e.g. Duo
+  // open in landscape, where the tab bar is at the bottom and the navigation bar is at the top).
   if (
+    usesVerticalBarForControls(metrics) &&
     metrics.barContainersVisible &&
     !metrics.barItemsKnown &&
     verticalBars.length === 0
@@ -347,7 +351,73 @@ function columnBars(
   });
 }
 
-/** The system's vertical bar: the column on one side that holds the status cluster and the bar items. */
+/**
+ * Fallback edge for a floating UIKit bar (such as a Liquid Glass tab bar pill floating above the home indicator) that
+ * doesn't touch an edge or inset band directly: horizontal bars hug top/bottom, vertical bars hug left/right.
+ */
+function nearestBarEdge(frame: Rect, width: number, height: number): Edge {
+  if (frame.width >= frame.height) {
+    return frame.y + frame.height / 2 <= height / 2 ? 'top' : 'bottom';
+  }
+  return frame.x + frame.width / 2 <= width / 2 ? 'left' : 'right';
+}
+
+/** Whether `metrics.systemBars` contains a horizontal bar along the bottom outside the vertical column. */
+function hasHorizontalBottomBar(
+  metrics: GranularSafeAreaMetrics,
+  column: Rect
+): boolean {
+  const bounds = { x: 0, y: 0, width: metrics.width, height: metrics.height };
+  return metrics.systemBars.some((bar) => {
+    const frame = intersection(bar, bounds);
+    if (!frame) return false;
+    const centerX = frame.x + frame.width / 2;
+    const inColumn =
+      frame.width <= column.width + 1 &&
+      centerX >= column.x &&
+      centerX <= maxX(column);
+    if (inColumn) return false;
+    return (
+      frame.width > frame.height &&
+      frame.y + frame.height / 2 > metrics.height / 2
+    );
+  });
+}
+
+/**
+ * Whether UIKit uses the vertical bar column for navigation and tab bar controls, rather than only for the status
+ * cluster. On the iPhone Duo closed (outer display), UIKit places the back button, header items and tab bar in the
+ * side column. On the Duo open in landscape (inner display), `verticalBarEdge` is still reported for the status
+ * cluster while UIKit places the tab bar along the bottom and the navigation bar along the top.
+ */
+export function usesVerticalBarForControls(
+  metrics: GranularSafeAreaMetrics
+): boolean {
+  if (metrics.platform !== 'ios' || !metrics.reservedRegionsSupported) {
+    return false;
+  }
+  const edge = resolveVerticalBarEdge(metrics);
+  if (!edge) return false;
+  const column = bandRect(
+    edge,
+    metrics.insets[edge],
+    metrics.width,
+    metrics.height
+  );
+  // Direct observation from UIKit's visible tab bar wins.
+  if (metrics.tabBarEdge && metrics.tabBarEdge !== edge) return false;
+  if (metrics.tabBarEdge === edge) return true;
+  // Direct observation from UIKit's visible bar items in the column.
+  if (columnBars(column, metrics).length > 0) return true;
+  // A horizontal bottom bar in `systemBars` (when `tabBarEdge` wasn't reported) proves bars are horizontal.
+  if (hasHorizontalBottomBar(metrics, column)) return false;
+  // Without visible bars to observe (e.g. pushed screen with hidden tab bar and custom header, or JS navigation),
+  // the outer display (`divisions.length === 0`) uses the column for bars while the unfolded inner display
+  // (`divisions.length > 0`, open in landscape) keeps the column for the status cluster only.
+  return metrics.divisions.length === 0;
+}
+
+/** The system's vertical bar: the column on one side that holds the status cluster and any bar items. */
 export type VerticalBar = {
   /** The physical edge the bar is on. */
   edge: 'left' | 'right';
@@ -363,11 +433,16 @@ export type VerticalBar = {
   items: Rect[];
   /** The active cameras in the column, top to bottom. */
   cameras: Rect[];
+  /**
+   * Whether UIKit uses this column for navigation and tab bar controls. `false` when the column holds only the
+   * status cluster (such as the iPhone Duo open in landscape).
+   */
+  acceptsControls: boolean;
 };
 
 /**
- * The vertical bar, if the platform has one where this provider is: the iPhone Duo closed, or open in landscape.
- * `null` everywhere else, and when the native side can't say where the status cluster ends.
+ * The vertical bar, if the platform has a side status/bar column where this provider is: the iPhone Duo closed, or
+ * open in landscape. `null` everywhere else, and when the native side can't say where the status cluster ends.
  */
 export function getVerticalBar(
   metrics: GranularSafeAreaMetrics
@@ -402,6 +477,7 @@ export function getVerticalBar(
     centerX,
     items,
     cameras: columnCameras(column, metrics),
+    acceptsControls: usesVerticalBarForControls(metrics),
   };
 }
 
@@ -419,14 +495,18 @@ function columnCameras(column: Rect, metrics: GranularSafeAreaMetrics): Rect[] {
 }
 
 /**
- * The edge the system puts a tab bar on where these metrics are, whether or not the app shows one: the vertical bar's
- * edge where there is one (the iPhone Duo closed, or open in landscape), the top of an iPad window of regular width,
- * and the bottom everywhere else, Android and the web included. `bottom` without metrics.
+ * The edge the system puts a tab bar on where these metrics are, whether or not the app shows one: where UIKit
+ * actually laid out its visible tab bar when present, the vertical bar's edge when UIKit uses the column for bars
+ * (the iPhone Duo closed), the top of an iPad window of regular width, and the bottom everywhere else (including the
+ * Duo open in landscape and portrait, Android and the web). `bottom` without metrics.
  */
 export function getTabBarEdge(metrics: GranularSafeAreaMetrics | null): Edge {
   if (metrics?.platform !== 'ios') return 'bottom';
-  const vertical = resolveVerticalBarEdge(metrics);
-  if (vertical) return vertical;
+  if (metrics.tabBarEdge) return metrics.tabBarEdge;
+  if (usesVerticalBarForControls(metrics)) {
+    const vertical = resolveVerticalBarEdge(metrics);
+    if (vertical) return vertical;
+  }
   if (metrics.idiom === 'pad' && metrics.horizontalSizeClass === 'regular') {
     return 'top';
   }
@@ -438,10 +518,11 @@ export const VERTICAL_BAR_ITEM_SIZE = 48;
 
 /**
  * Where a back button goes in the vertical bar: the top slot, right below the status cluster, where UIKit puts the
- * back button of a navigation controller. `null` without a vertical bar, or when a UIKit bar item already sits there
- * (a native header shows its own back button).
+ * back button of a navigation controller. `null` when UIKit doesn't use the column for bars (such as the Duo open in
+ * landscape), without a vertical bar, or when a UIKit bar item already sits there (a native header shows its own).
  */
 export function verticalBarBackButtonFrame(bar: VerticalBar): Rect | null {
+  if (!bar.acceptsControls) return null;
   const size = VERTICAL_BAR_ITEM_SIZE;
   if (bar.bottom - bar.top < size) return null;
   const frame = {

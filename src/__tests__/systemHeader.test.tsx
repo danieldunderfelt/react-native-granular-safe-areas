@@ -149,18 +149,35 @@ describe('useSystemHeaderItems', () => {
     });
   });
 
-  it('switches when the system UI changes, such as the Duo opening', () => {
+  it('switches when the system UI changes, such as the Duo opening to portrait or landscape', () => {
     const { store, navigation, shown, render } = setup(
       fixtures.iPhoneDuoOuterPortrait
     );
     render({});
     expect(shown).toHaveBeenLastCalledWith(true);
-    const opened = fixtures.iPhoneDuoInnerPortrait;
+
+    // Open in landscape: the side column only holds the status cluster, so the screen keeps its own header/back button.
+    const openedLandscape = {
+      ...fixtures.iPhoneDuoInnerLandscape,
+      tabBarEdge: 'bottom' as const,
+      systemBars: [{ x: 250, y: 585, width: 451, height: 60 }],
+    };
     act(() =>
       store.publish(
-        buildRegions(opened),
-        opened,
-        buildRegions(opened, { granular: false })
+        buildRegions(openedLandscape),
+        openedLandscape,
+        buildRegions(openedLandscape, { granular: false })
+      )
+    );
+    expect(shown).toHaveBeenLastCalledWith(false);
+    expect(lastOptions(navigation)).toMatchObject({ headerShown: false });
+
+    const openedPortrait = fixtures.iPhoneDuoInnerPortrait;
+    act(() =>
+      store.publish(
+        buildRegions(openedPortrait),
+        openedPortrait,
+        buildRegions(openedPortrait, { granular: false })
       )
     );
     expect(shown).toHaveBeenLastCalledWith(false);

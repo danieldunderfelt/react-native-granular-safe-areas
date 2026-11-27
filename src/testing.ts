@@ -9,6 +9,7 @@ export {
   metricsFromInsets,
   placementToRect,
   safeAreaViewInsets,
+  usesVerticalBarForControls,
   type BuildRegionsOptions,
   type ElementInsetsOptions,
   type GranularPlacement,

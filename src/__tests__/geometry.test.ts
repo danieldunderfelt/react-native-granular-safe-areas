@@ -931,6 +931,7 @@ describe('getVerticalBar', () => {
       cameras: [
         { x: 399.6666666666667, y: 29.333333333333332, width: 37, height: 37 },
       ],
+      acceptsControls: true,
     });
   });
 
@@ -962,15 +963,38 @@ describe('verticalBarBackButtonFrame', () => {
     });
   });
 
-  it('matches the system back button on the inner display in landscape, below its shorter status cluster', () => {
+  it('does not claim a back button slot on the inner display in landscape when the column only holds the status cluster', () => {
     const bar = getVerticalBar(fixtures.iPhoneDuoInnerLandscape);
-    // Where UIKit drew the back button of a native header in the same pose.
-    expect(bar && verticalBarBackButtonFrame(bar)).toEqual({
+    expect(bar?.acceptsControls).toBe(false);
+    expect(bar && verticalBarBackButtonFrame(bar)).toBeNull();
+
+    // If UIKit does put bar items in the column (e.g. a vertical tab bar platter), the slot is active.
+    const withColumnBars = getVerticalBar({
+      ...fixtures.iPhoneDuoInnerLandscape,
+      tabBarEdge: 'right',
+      systemBars: [{ x: 879, y: 460, width: 48, height: 162 }],
+      barContainersVisible: true,
+      barItemsKnown: true,
+    });
+    expect(withColumnBars?.acceptsControls).toBe(true);
+    expect(
+      withColumnBars && verticalBarBackButtonFrame(withColumnBars)
+    ).toEqual({
       x: 879,
       y: 124,
       width: 48,
       height: 48,
     });
+  });
+
+  it('does not claim a back button slot when UIKit placed the tab bar along the bottom', () => {
+    const bar = getVerticalBar({
+      ...duo,
+      tabBarEdge: 'bottom',
+      systemBars: [{ x: 80, y: 580, width: 300, height: 60 }],
+    });
+    expect(bar?.acceptsControls).toBe(false);
+    expect(bar && verticalBarBackButtonFrame(bar)).toBeNull();
   });
 
   it('puts the bar on the left in landscape on the outer display, below the camera', () => {
@@ -1181,10 +1205,32 @@ describe('getSystemControls on the iPhone Duo', () => {
     expect(controls.cameras[0]!.x).toBeLessThan(84);
   });
 
-  it('has no camera where it is off, open in landscape', () => {
+  it('has no camera where it is off, open in landscape, and refines the status strip alongside a bottom tab bar', () => {
     const controls = getSystemControls(fixtures.iPhoneDuoInnerLandscape)!;
     expect(controls.cameras).toEqual([]);
     expect(controls.status).toEqual({ x: 867, y: 0, width: 84, height: 124 });
     expect(controls.start).toBe(124);
+
+    // Floating bottom tab bar pill above the home indicator gets edge: 'bottom', and the right column still refines
+    // into just the status cluster even when UIKit bar containers are visible without floating column items.
+    const withBottomTabBar = {
+      ...fixtures.iPhoneDuoInnerLandscape,
+      tabBarEdge: 'bottom' as const,
+      barContainersVisible: true,
+      barItemsKnown: false,
+      systemBars: [{ x: 275, y: 565, width: 400, height: 62, owner: 9 }],
+    };
+    const regions = buildRegions(withBottomTabBar);
+    expect(regions).toContainEqual({
+      kind: 'status',
+      edge: 'right',
+      frame: { x: 867, y: 0, width: 84, height: 124 },
+    });
+    expect(regions).toContainEqual({
+      kind: 'controls',
+      edge: 'bottom',
+      frame: { x: 275, y: 565, width: 400, height: 62 },
+      owner: 9,
+    });
   });
 });

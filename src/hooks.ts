@@ -62,10 +62,11 @@ export function useSystemControls(): SystemControls | null {
 }
 
 /**
- * The edge the system puts a tab bar on here, whether or not the app shows one: on the iPhone Duo (closed, or open in
- * landscape) the edge with the vertical bar, on an iPad window of regular width the top, and the bottom everywhere
- * else. For a tab bar of your own that should sit where the system's would, or to know which way is "past the tab bar".
- * Re-renders when it changes, such as when the Duo opens.
+ * The edge the system puts a tab bar on here, whether or not the app shows one: where UIKit actually laid out its
+ * visible tab bar when present, the vertical bar's edge when UIKit uses the column for bars (the iPhone Duo closed),
+ * the top of an iPad window of regular width, and the bottom everywhere else (including the Duo open in landscape and
+ * portrait). For a tab bar of your own that should sit where the system's would, or to know which way is "past the
+ * tab bar". Re-renders when it changes, such as when the Duo opens.
  *
  * To keep floating UI clear of whichever tab bar there is, you don't need it: a `granular` `SafeAreaView` already
  * avoids UIKit's tab bar wherever it is, and your own if it's a `SafeAreaAccessory`.

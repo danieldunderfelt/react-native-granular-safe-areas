@@ -189,6 +189,35 @@ describe('the Jest mock', () => {
     });
   });
 
+  it('keeps bottom tab bar and custom back buttons on Duo open in landscape while still reporting the status strip', () => {
+    const seen = jest.fn();
+    const tree = render(
+      <GranularSafeAreaProvider mock={fixtures.iPhoneDuoInnerLandscape}>
+        <Probe onRender={seen} />
+        <SystemBackButton onPress={() => {}}>
+          <mine-back-button />
+        </SystemBackButton>
+        <HeaderScreen onShare={() => {}} />
+      </GranularSafeAreaProvider>
+    );
+    expect(seen).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        edge: 'bottom',
+        controls: 'right',
+        deviceType: 'foldable',
+        devicePosture: 'unfolded',
+      })
+    );
+    // Both SystemBackButton and HeaderScreen keep the app's own back button visible.
+    expect(tree.root.findAllByType('mine-back-button' as never)).toHaveLength(
+      2
+    );
+    expect(
+      tree.root.findAllByProps({ testID: 'SystemBackButton' })
+    ).toHaveLength(0);
+    expect(getSystemHeaderItems()).toBeNull();
+  });
+
   it('gives way when disabled', () => {
     const tree = render(
       <GranularSafeAreaProvider mock={fixtures.iPhoneDuoOuterPortrait}>

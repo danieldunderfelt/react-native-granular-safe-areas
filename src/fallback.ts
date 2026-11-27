@@ -1,4 +1,9 @@
-import { EDGES, overlaps, resolveVerticalBarEdge } from './geometry';
+import {
+  EDGES,
+  overlaps,
+  resolveVerticalBarEdge,
+  usesVerticalBarForControls,
+} from './geometry';
 import type { Edge, GranularSafeAreaMetrics, Rect } from './types';
 
 /** Why granular safe areas are unavailable or fell back to whole-band avoidance. */
@@ -185,7 +190,11 @@ export function detectMetricsFallback(
         isIssue: true,
       };
     }
-    if (metrics.barContainersVisible && !metrics.barItemsKnown) {
+    if (
+      usesVerticalBarForControls(metrics) &&
+      metrics.barContainersVisible &&
+      !metrics.barItemsKnown
+    ) {
       const hasVerticalBar = metrics.systemBars.some((bar) => {
         const centerX = bar.x + bar.width / 2;
         return (

@@ -93,6 +93,7 @@ function metricsSignature(metrics: GranularSafeAreaMetrics | null): string {
     Math.round(metrics.width),
     Math.round(metrics.height),
     metrics.verticalBarEdge ?? 'none',
+    metrics.tabBarEdge ?? 'none',
     metrics.barContainersVisible ? '1' : '0',
     metrics.barItemsKnown ? '1' : '0',
     metrics.reservedRegionsSupported ? '1' : '0',

@@ -399,6 +399,49 @@ describe('checkDiagnostics', () => {
     );
   });
 
+  it('passes on Duo open in landscape with a horizontal bottom tab bar and status-only right column', () => {
+    const metrics: GranularSafeAreaMetrics = {
+      ...fixtures.iPhoneDuoInnerLandscape,
+      tabBarEdge: 'bottom',
+      barContainersVisible: true,
+      barItemsKnown: false,
+      systemBars: [{ x: 250, y: 585, width: 451, height: 60, owner: 8 }],
+    };
+    const diag = {
+      device: { machine: 'iPhone19,4', model: 'iPhone', systemVersion: '27.2' },
+      sdk: { iphoneOSVersionMaxAllowed: 270200, hasIOS27_1SDK: 1 },
+      windows: [
+        {
+          class: 'UIWindow',
+          isKey: true,
+          hidden: false,
+          metrics,
+          bars: {
+            barItemsKnown: false,
+            containersVisible: true,
+            views: [
+              {
+                classes: ['UITabBar'],
+                frame: { x: 250, y: 585, width: 451, height: 60 },
+                visible: true,
+              },
+            ],
+          },
+          viewControllers: { class: 'RNSTabBarController', children: [] },
+          viewsNearEdges: [],
+        },
+      ],
+    };
+    expect(detectMetricsFallback(metrics)).toBeNull();
+    const result = checkDiagnostics(diag, { metrics });
+    expect(result.ok).toBe(true);
+    expect(result.regions.map((r) => [r.kind, r.edge])).toEqual([
+      ['status', 'right'],
+      ['inset', 'bottom'],
+      ['controls', 'bottom'],
+    ]);
+  });
+
   it('passes on a regular iPhone without a vertical bar', () => {
     const diag = {
       device: { machine: 'iPhone19,2', model: 'iPhone', systemVersion: '27.2' },

@@ -76,18 +76,17 @@ function fallbackOptions(fallback: object | undefined): object {
 }
 
 /**
- * Whether the system has a place for header controls where the screen is: the iPhone Duo's vertical bar. Only iOS
- * draws UIKit's bar items there; a mocked Duo layout elsewhere doesn't count.
+ * Whether the system puts navigation/header controls in the vertical bar column where the screen is (the iPhone Duo
+ * closed, or wherever UIKit actually uses the column for bars — not open in landscape where the navigation bar sits
+ * at the top). Only iOS draws UIKit's bar items there; a mocked Duo layout elsewhere doesn't count.
  */
 function useHasVerticalBar(): boolean {
   const store = useGranularSafeAreaStore();
   return useSyncExternalStore(store.subscribe, () => {
-    const { metrics } = store.getSnapshot();
-    return (
-      Platform.OS === 'ios' &&
-      metrics !== null &&
-      getVerticalBar(metrics) !== null
-    );
+    const { metrics, fallbackToBands } = store.getSnapshot();
+    if (Platform.OS !== 'ios' || !metrics || fallbackToBands) return false;
+    const bar = getVerticalBar(metrics);
+    return bar !== null && bar.acceptsControls;
   });
 }
 

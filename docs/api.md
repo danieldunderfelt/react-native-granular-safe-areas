@@ -119,8 +119,9 @@ type SystemControls = {
 
 ### `useTabBarEdge(): Edge`
 
-Where the system puts a tab bar here, whether or not the app has one: the vertical bar's edge on the iPhone Duo
-(closed, or open in landscape), `'top'` in an iPad window of regular width, `'bottom'` everywhere else.
+Where the system puts a tab bar here, whether or not the app has one: where UIKit actually laid out a visible tab bar
+when present, the vertical bar's edge when UIKit uses the column for bars (the iPhone Duo closed), `'top'` in an iPad
+window of regular width, and `'bottom'` everywhere else (including the Duo open in landscape and portrait).
 
 ### `useSafeAreaDevice(): SafeAreaDeviceInfo`
 
@@ -236,10 +237,11 @@ Takes the props of `SafeAreaView`, with Reanimated's animated styles, plus:
 
 ### `useSystemHeaderItems(options?): { shown: boolean }`
 
-Header buttons drawn by the system for a screen with a header of its own. Where the system has a place for its
-controls (the iPhone Duo closed, or open in landscape), the screen gets a transparent, empty native header with the
-items, and UIKit draws its back button and the items in the vertical bar; `shown` is `true`. Elsewhere it gets
-`fallback`, and so does the screen when the component that calls it unmounts while the screen stays.
+Header buttons drawn by the system for a screen with a header of its own. Where UIKit puts bar controls in the side
+column (the iPhone Duo closed), the screen gets a transparent, empty native header with the items, and UIKit draws its
+back button and the items in the vertical bar; `shown` is `true`. Elsewhere (including the Duo open in landscape, where
+the navigation bar sits at the top) it gets `fallback`, and so does the screen when the component that calls it unmounts
+while the screen stays.
 
 Only a native-stack screen turns the options into a header. Elsewhere (the root of a tab rendered through `<Slot />`,
 a JS stack, a tab navigator's own screens) nothing draws them: render the screen in a native stack, or pass

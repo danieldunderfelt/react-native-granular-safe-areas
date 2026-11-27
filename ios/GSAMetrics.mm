@@ -246,14 +246,99 @@ static BOOL GSAHasVisibleBarContainer(UIViewController *controller, NSUInteger d
   return NO;
 }
 
+/// Whether `view` or a nearby descendant is a UIKit tab bar or tab bar platter (used to tell where UIKit actually
+/// placed the tab bar when a floating bar container is present).
+static BOOL GSAHasTabBarClass(UIView *view, NSUInteger depth)
+{
+  if (depth > 8) {
+    return NO;
+  }
+  if ([view isKindOfClass:UITabBar.class]) {
+    return YES;
+  }
+  NSString *name = NSStringFromClass(view.class);
+  if ([name containsString:@"TabBar"] || [name containsString:@"TabButton"]) {
+    return YES;
+  }
+  for (UIView *subview in view.subviews) {
+    if (subview.hidden || subview.alpha < 0.01) {
+      continue;
+    }
+    if (GSAHasTabBarClass(subview, depth + 1)) {
+      return YES;
+    }
+  }
+  return NO;
+}
+
+/// The physical edge where UIKit actually placed a visible tab bar (`UITabBar` or floating tab platter), in `view`'s
+/// coordinates, or nil when no tab bar is visible.
+static NSString *_Nullable GSATabBarEdgeForView(
+    UIView *view,
+    UIWindow *window,
+    GSAWindowBars *windowBars,
+    UIEdgeInsets insets,
+    NSString *_Nullable barEdge)
+{
+  const CGSize size = view.bounds.size;
+  if (size.width <= 0 || size.height <= 0) {
+    return nil;
+  }
+  BOOL hasSideColumn = NO;
+  BOOL columnOnRight = NO;
+  CGFloat columnWidth = 0;
+  if (barEdge != nil) {
+    BOOL rtl = view.effectiveUserInterfaceLayoutDirection == UIUserInterfaceLayoutDirectionRightToLeft;
+    BOOL rightSide = [barEdge isEqualToString:@"trailing"] != rtl;
+    CGFloat mapped = rightSide ? insets.right : insets.left;
+    CGFloat other = rightSide ? insets.left : insets.right;
+    if (mapped <= 0 && other > 0) {
+      rightSide = !rightSide;
+      mapped = other;
+    }
+    if (mapped > 0) {
+      hasSideColumn = YES;
+      columnOnRight = rightSide;
+      columnWidth = mapped;
+    }
+  }
+
+  for (UIView *bar in windowBars.tabBarViews) {
+    if (bar.window != window || !GSAIsVisible(bar)) {
+      continue;
+    }
+    CGRect frame = [view convertRect:bar.bounds fromView:bar];
+    if (CGRectIsEmpty(frame) || !CGRectIntersectsRect(frame, view.bounds)) {
+      continue;
+    }
+    const CGFloat midX = CGRectGetMidX(frame);
+    const CGFloat midY = CGRectGetMidY(frame);
+    if (hasSideColumn && frame.size.width <= columnWidth + 1) {
+      if (!columnOnRight && midX <= columnWidth) {
+        return @"left";
+      }
+      if (columnOnRight && midX >= size.width - columnWidth) {
+        return @"right";
+      }
+    }
+    if (frame.size.height > frame.size.width) {
+      return midX <= size.width / 2 ? @"left" : @"right";
+    }
+    return midY <= size.height / 2 ? @"top" : @"bottom";
+  }
+  return nil;
+}
+
 @implementation GSAWindowBars
 
 - (instancetype)initWithBarViews:(NSArray<UIView *> *)barViews
+                     tabBarViews:(NSArray<UIView *> *)tabBarViews
                containersVisible:(BOOL)containersVisible
                    barItemsKnown:(BOOL)barItemsKnown
 {
   if (self = [super init]) {
     _barViews = barViews;
+    _tabBarViews = tabBarViews;
     _containersVisible = containersVisible;
     _barItemsKnown = barItemsKnown;
   }
@@ -270,6 +355,19 @@ static BOOL GSAHasVisibleBarContainer(UIViewController *controller, NSUInteger d
   if (window != nil) {
     GSACollectBars(window, bars, 0, &foundFloatingBars);
   }
+  // Identify tab bar views before dropping vertical UITabBar placeholders: prefer floating tab platters when present,
+  // falling back to UITabBar views.
+  NSMutableArray<UIView *> *floatingTabBars = [NSMutableArray new];
+  NSMutableArray<UIView *> *uiTabBars = [NSMutableArray new];
+  for (UIView *bar in bars) {
+    if ([bar isKindOfClass:UITabBar.class]) {
+      [uiTabBars addObject:bar];
+    } else if (!GSAIsBarView(bar) && GSAHasTabBarClass(bar, 0)) {
+      [floatingTabBars addObject:bar];
+    }
+  }
+  NSArray<UIView *> *tabBarViews = floatingTabBars.count > 0 ? floatingTabBars : uiTabBars;
+
   if (foundFloatingBars) {
     // With floating bars, a vertical UITabBar or UIToolbar is a placeholder: on the Duo, UITabBarController keeps an
     // empty UITabBar running the full height of the column, while the tabs are drawn in a platter in the floating bar
@@ -285,7 +383,10 @@ static BOOL GSAHasVisibleBarContainer(UIViewController *controller, NSUInteger d
        controller = controller.presentedViewController) {
     containersVisible = GSAHasVisibleBarContainer(controller, 0);
   }
-  return [[self alloc] initWithBarViews:bars containersVisible:containersVisible barItemsKnown:foundFloatingBars];
+  return [[self alloc] initWithBarViews:bars
+                            tabBarViews:tabBarViews
+                      containersVisible:containersVisible
+                          barItemsKnown:foundFloatingBars];
 }
 
 @end
@@ -415,6 +516,10 @@ NSDictionary *_Nullable GSAMetricsForView(UIView *view, GSAWindowBars *_Nullable
   metrics[@"systemBars"] = systemBars;
   metrics[@"barContainersVisible"] = @(windowBars.containersVisible);
   metrics[@"barItemsKnown"] = @(windowBars.barItemsKnown);
+  NSString *tabBarEdge = GSATabBarEdgeForView(view, window, windowBars, insets, barEdge);
+  if (tabBarEdge != nil) {
+    metrics[@"tabBarEdge"] = tabBarEdge;
+  }
 
   return metrics;
 }
