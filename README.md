@@ -104,6 +104,8 @@ Scroll views are detected (any React Native `ScrollView`, so `FlatList`, `Sectio
 
 - The bands on the edges the content scrolls towards are left to the scroll view's content inset. Otherwise a row
   measured at the bottom would keep the home indicator's inset as it scrolls up.
+  - To avoid the side column inside a horizontal carousel, use `dynamic` with horizontal edges (`edges={['right']}` or
+    `edges={['left', 'right']}`), or pass `avoidScrollingEdges` (which works for any `edges` and static views too).
 - A view that is out of sight when it's measured, further down the list, gets the inset it will need on screen.
 - Clipping inside the scroll view (a row or a rounded card with `overflow: hidden`) scrolls along with the content, so
   it doesn't limit where the view can be seen along the scroll axis: every row in a list lines up, whichever ones
@@ -122,7 +124,7 @@ regular safe area.
 | `padding` (default) | The children move in; the view's box and background stay | Containers sized by their parent: headers, bottom bars, rows |
 | `margin` | The view's box moves in, and so does what's laid out next to it | Like safe-area-context's `margin` mode |
 | `offset` | The whole view moves, with a transform on top of its own | Floating buttons, badges, anything sized by its content |
-| `none` | Nothing; read the insets with `onInsetsChange` or `useSafeAreaViewInsets` | Layouts of your own |
+| `none` | Nothing; read the insets with `onInsetsChange`, `useSafeAreaViewInsets` or `useSafeAreaViewStyle` | Layouts of your own and `contentContainerStyle` |
 
 `edges` works as in react-native-safe-area-context: a list of edges, or an object with `'additive'` (add the inset to
 the view's own padding or margin), `'maximum'` (use whichever is larger) or `'off'` per edge. The view's own padding is
@@ -290,27 +292,44 @@ it's closest to, so content beneath it moves away from that edge; set `edge` to 
 
 ### Insets for the content of a view
 
-`useSafeAreaViewInsets()` returns the insets of the nearest `SafeAreaView` around a component. Use it for content that
-applies insets itself, such as a list's content padding. With `mode="none"`, the view applies nothing and only measures:
+`useSafeAreaViewInsets()` and `useSafeAreaViewStyle()` read the insets of the nearest `SafeAreaView` around a component.
+Use them for content that applies insets itself, such as a `ScrollView` or `FlatList`'s `contentContainerStyle`. With
+`mode="none"`, the view applies nothing and only measures:
 
 ```tsx
 function Screen() {
   return (
-    <SafeAreaView mode="none" edges={['bottom']} style={{ flex: 1 }}>
+    <SafeAreaView mode="none" edges={['right', 'bottom']} gap={16} style={{ flex: 1 }}>
       <List />
     </SafeAreaView>
   );
 }
 
 function List() {
-  const { bottom } = useSafeAreaViewInsets();
-  return <FlatList contentContainerStyle={{ paddingBottom: bottom }} … />;
+  // Combines styles.content with the SafeAreaView's insets, respecting gap / maximum / additive, shorthands and RTL.
+  const safeArea = useSafeAreaViewStyle(styles.content);
+  return <FlatList contentContainerStyle={[styles.content, safeArea]} … />;
+}
+```
+
+Or in a single component without splitting out a child, render `useSafeAreaStyle`'s `probe` in the container around the
+list and pass `safeArea.style` to `contentContainerStyle`:
+
+```tsx
+function Screen() {
+  const safeArea = useSafeAreaStyle({ edges: ['right', 'bottom'], gap: 16, style: styles.content });
+  return (
+    <View style={{ flex: 1 }}>
+      {safeArea.probe}
+      <FlatList contentContainerStyle={[styles.content, safeArea.style]} … />
+    </View>
+  );
 }
 ```
 
 The view measures its own box, so in a tab screen the list ends above the tab bar and your accessories, and in a sheet
-only above the home indicator. It's zero outside a `SafeAreaView`, and inside one in `offset` mode, which moves as a
-whole.
+only above the home indicator. `useSafeAreaViewInsets()` is zero (and `useSafeAreaViewStyle()` returns `null`) outside a
+`SafeAreaView`, and inside one in `offset` mode, which moves as a whole.
 
 ### Insets for a layout of your own
 
@@ -383,13 +402,18 @@ closed), `'top'` in an iPad window of regular width, and `'bottom'` everywhere e
 and portrait, Android, and the web). Use it to put a tab bar of your own where the system's would go.
 
 `useSafeAreaDevice()` exposes the classified device type (`'phone'`, `'tablet'`, `'foldable'`, `'desktop'`, `'web'`,
-or `'unknown'`), posture (`'standard'`, `'folded'`, `'unfolded'`, `'half-opened'`, `'windowed'`), native hardware/OS
-identifiers (`model`, `systemVersion`), and `granularSupported`. It only re-renders when those values change:
+or `'unknown'`), posture (`'standard'`, `'folded'`, `'unfolded'`, `'half-opened'`, `'windowed'`), `hasVerticalBar` and
+`verticalBarEdge`, native hardware/OS identifiers (`model`, `systemVersion`), and `granularSupported`. It only
+re-renders when those values change:
 
 ```tsx
-const device = useSafeAreaDevice();
-// On iPhone Duo closed: { type: 'foldable', posture: 'folded', hasVerticalBar: true, granularSupported: true, model: 'iPhone19,4', systemVersion: '27.2', ... }
+const { hasVerticalBar, verticalBarEdge } = useSafeAreaDevice();
+// `hasVerticalBar` is `true` only when UIKit puts bars in a vertical side column (e.g. iPhone Duo closed, where sheets
+// float clear of the bottom), and `false` in Duo open landscape where sheets and tab bars sit at the bottom as usual.
 ```
+
+`useSystemControls()` also exposes `hasBars` (`true` on closed Duo and Android desktop caption bars, `false` in Duo open
+landscape where the strip only holds the status cluster).
 
 **Floating UI above whichever tab bar there is** doesn't need it, though. UIKit's tab bar is a `controls` region
 wherever it is, so a granular view in `offset` mode moves clear of it by exactly as much as it overlaps:
@@ -448,9 +472,9 @@ a regular iPhone and the Duo open in landscape or portrait, your button stays as
 - **Other views avoid it** as a `controls` region; a sheet over it ignores it.
 - **One at a time.** Every screen can offer one; the most recent screen that is showing wins. Screens below the top of
   a stack and unselected tabs drop out on their own, because UIKit takes their views out of the window. So does a
-  screen that stays mounted but hidden: `opacity: 0` or `display: 'none'` on it or any ancestor, checked after every
-  React Native update. An opacity animated on the UI thread counts from the next update; for anything else that keeps
-  a mounted screen from the user, turn its button off with `enabled`.
+  screen that stays mounted but hidden: `opacity: 0`, `display: 'none'`, or slid outside the window / a clipping
+  ancestor with a transform such as `translateY` (including UI-thread animations). For anything else that keeps a
+  mounted screen from the user, turn its button off with `enabled`.
 - **Gives way to UIKit.** If a native header already shows its back button there, your own stays.
 
 | Prop | Default | |
@@ -545,6 +569,7 @@ Router, a `_layout` with `<Stack />` instead of `<Slot />`, even for a single sc
 | `edges` | all four | Edges the element may be pushed in from, as a list or per edge |
 | `granular` | `false` | Avoid only the regions it overlaps, not whole bands |
 | `dynamic` | `false` | `SafeAreaView` only. Follow the view as it moves; implies `granular` |
+| `avoidScrollingEdges` | `false` | Also avoid regions on edges a scroll view scrolls towards (e.g. a horizontal carousel avoiding the side column) |
 | `mode` | `'padding'` | `SafeAreaView` only. `padding`, `margin`, `offset` or `none` |
 | `spacing` | `0` | Extra clearance around each region, in points |
 | `gap` | | `SafeAreaView` and `useSafeAreaStyle`. Keep the content this far from what it avoids, counting the view's own padding |
@@ -656,11 +681,15 @@ afterEach(() => mockSafeAreaMetrics(null));
 ```
 
 The hooks then return what they would on that device: `useSystemControls`, `useSafeAreaRegions`, `useTabBarEdge`,
-`useSafeAreaInsetsFor`, and `useSystemHeaderItems` (map `react-native-granular-safe-areas/native-stack` or
-`/expo-router` to the mock too). `SystemBackButton` hides your button where the system would show its own, and renders a
-pressable stand-in with the test ID `SystemBackButton` that calls the `onPress` of the screen that would get it, so
-`fireEvent.press(screen.getByTestId('SystemBackButton'))` works. The stand-in carries the `icon` you gave it and the
-SF Symbol the system would draw as `systemImage` (`'chevron.backward'`, or `'xmark'` for `icon="close"`).
+`useSafeAreaDevice`, `useSafeAreaInsetsFor`, and `useSystemHeaderItems` (map
+`react-native-granular-safe-areas/native-stack` or `/expo-router` to the mock too). `SafeAreaView`,
+`SafeAreaAccessory`, `SafeAreaDefaults`, `useSafeAreaStyle`, `useSafeAreaViewInsets` and `useSafeAreaViewStyle` apply
+the mocked metrics' band insets (`padding`, `margin`, `offset`, `mode="none"`, `gap` and `onInsetsChange`), so layout
+tests work directly without a custom `SafeAreaView` mock. `SystemBackButton` hides your button where the system would
+show its own, and renders a pressable stand-in with the test ID `SystemBackButton` that calls the `onPress` of the
+screen that would get it, so `fireEvent.press(screen.getByTestId('SystemBackButton'))` works. The stand-in carries the
+`icon` you gave it and the SF Symbol the system would draw as `systemImage` (`'chevron.backward'`, or `'xmark'` for
+`icon="close"`).
 
 `useSystemHeaderItems` leaves the screen's options alone in the mock, so it needs no navigator. `getSystemHeaderItems()`
 returns what the system would show for the most recently mounted screen whose items are shown, or `null` where none
@@ -673,12 +702,14 @@ mockSafeAreaMetrics(fixtures.iPhoneDuoOuterPortrait);
 render(<TripDetails />);
 const { headerRightItems, headerBackVisible } = getSystemHeaderItems()!;
 const share = headerRightItems.find((item) => item.label === 'Share')!;
-act(() => share.onPress!());
+act(() => {
+  share.onPress!();
+});
 expect(onShare).toHaveBeenCalled();
 ```
 
-The items are the ones the screen passed, with its latest handlers; menus are in them as you wrote them. Views stay
-plain `View`s: nothing is laid out in Jest, so there's nothing for them to measure.
+The items are the ones the screen passed, with its latest handlers; menus are in them as you wrote them, and
+`getSystemHeaderItems()` tracks rendered screens synchronously so synchronous `act` calls don't break later tests.
 
 The geometry behind the components (`buildRegions`, `safeAreaViewInsets`, `parseMetrics`, ...) is exported from
 `react-native-granular-safe-areas/testing`, for tests and tools.

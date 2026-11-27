@@ -16,6 +16,7 @@ export type SafeAreaDefaultsOptions = {
   spacing?: number;
   gap?: number;
   underlying?: boolean;
+  avoidScrollingEdges?: boolean;
 };
 
 const DEFAULT_KEYS = [
@@ -26,6 +27,7 @@ const DEFAULT_KEYS = [
   'spacing',
   'gap',
   'underlying',
+  'avoidScrollingEdges',
 ] as const satisfies readonly (keyof SafeAreaDefaultsOptions)[];
 
 /** `defaults` on top of `parent`: nested `SafeAreaDefaults` add to the ones around them. */

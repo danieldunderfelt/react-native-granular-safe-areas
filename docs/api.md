@@ -25,7 +25,8 @@ A drop-in for react-native-safe-area-context's `SafeAreaView`. Takes `ViewProps`
 | `edges` | `Edges` | all four, additive | Edges the view may be pushed in from: a list, or `{ top: 'additive' \| 'maximum' \| 'off', ... }` |
 | `mode` | `'padding' \| 'margin' \| 'offset' \| 'none'` | `'padding'` | How the insets are applied |
 | `granular` | `boolean` | `false` | Avoid only the regions the view overlaps where it's laid out, not whole bands |
-| `dynamic` | `boolean` | `false` | Follow the view as it moves, avoiding only what it overlaps right now. Implies `granular` |
+| `dynamic` | `boolean` | `false` | Follow the view as it moves, avoiding only what it overlaps right now. Implies `granular`. In a scroll view, requesting only edges on the scrolling axis (e.g. `edges={['left', 'right']}` in a horizontal carousel) keeps those edges |
+| `avoidScrollingEdges` | `boolean` | `false` | Also avoid regions on edges a scroll view scrolls towards (e.g. a horizontal carousel avoiding the side column even with default `edges` or static measurement) |
 | `avoid` | `readonly SafeAreaRegionKind[]` | all but `'fold'` | Region kinds to avoid. `[]` avoids nothing |
 | `spacing` | `number` | `0` | Extra clearance around each region, in points |
 | `gap` | `number` | | Keep the content this far from what it avoids, counting the view's own padding: each edge gets the larger of its own padding and the overlap plus `gap` |
@@ -38,7 +39,7 @@ A drop-in for react-native-safe-area-context's `SafeAreaView`. Takes `ViewProps`
 | `padding` | The children move in; the view's box and background stay | React Native layout |
 | `margin` | The view's box moves in, and so does what's laid out next to it | React Native layout |
 | `offset` | The whole view moves, with a transform on top of its own | Natively, in the same frame (iOS, Android) |
-| `none` | Nothing; read the insets with `onInsetsChange` or `useSafeAreaViewInsets` | |
+| `none` | Nothing; read the insets with `onInsetsChange`, `useSafeAreaViewInsets` or `useSafeAreaViewStyle` | |
 
 ### `SafeAreaAccessory`
 
@@ -51,24 +52,38 @@ Your own UI floating over the content, which other views avoid where it's drawn 
 
 ### `useSafeAreaStyle(options?): SafeAreaStyle`
 
-`SafeAreaView` for a component whose root you don't control, such as a `Pressable`. Render `probe` inside the root and
-put `style` after the root's own style.
+`SafeAreaView` for a component whose root you don't control, such as a `Pressable`, or to compute a `ScrollView` /
+`FlatList`'s `contentContainerStyle` in the same component. Render `probe` inside the container and put `style` after
+its own style.
 
-- `options: UseSafeAreaStyleOptions`: `edges`, `mode`, `granular`, `dynamic`, `avoid`, `spacing`, `gap`, `underlying`,
-  `onInsetsChange`, and `style`, the root's own style, which `additive` and `maximum` edges build on.
+- `options: UseSafeAreaStyleOptions`: `edges`, `mode`, `granular`, `dynamic`, `avoidScrollingEdges`, `avoid`, `spacing`,
+  `gap`, `underlying`, `onInsetsChange`, and `style`, the component's own style, which `additive` and `maximum` edges
+  build on.
 - Returns `{ style: ViewStyle | null; insets: EdgeInsets; probe: ReactElement }`. `probe` is an invisible view,
-  absolutely positioned to fill the root, that measures it natively.
+  absolutely positioned to fill the container, that measures it natively.
 
 ### `SafeAreaDefaults`
 
 Default props for every `SafeAreaView`, `SafeAreaAccessory`, `AnimatedSafeAreaView` and `useSafeAreaStyle` inside it:
-`edges`, `mode`, `granular`, `avoid`, `spacing`, `gap`, `underlying`. A view's own props win, and nested defaults add
-to the ones around them. It measures nothing.
+`edges`, `mode`, `granular`, `avoidScrollingEdges`, `avoid`, `spacing`, `gap`, `underlying`. A view's own props win, and
+nested defaults add to the ones around them. It measures nothing.
 
 ### `useSafeAreaViewInsets(): EdgeInsets`
 
 The insets of the nearest `SafeAreaView` around the component, for content that applies them itself. Zero outside a
 `SafeAreaView`, and inside one in `offset` mode.
+
+### `useSafeAreaViewStyle(style?, options?): ViewStyle | null`
+
+Combines the nearest `SafeAreaView`'s insets with a child's own `style`, respecting the enclosing view's `gap`,
+`'maximum'` / `'additive'` edge modes, shorthands (`paddingHorizontal`, `paddingStart`, `paddingEnd`) and RTL. Built for
+a `ScrollView` or `FlatList`'s `contentContainerStyle` inside a `<SafeAreaView mode="none" ...>` without keeping insets
+in state or writing manual `Math.max`.
+
+- `style`: the content's own style (e.g. `styles.content`).
+- `options: UseSafeAreaViewStyleOptions`: optional `edges` (override the enclosing view's edge modes) and `mode`
+  (`'padding'` default, or `'margin'`).
+- Returns the style override to place after `style` (`[styles.content, safeArea]`), or `null` when nothing changes.
 
 ### `useSafeAreaInsetsFor(placement?, options?): EdgeInsets`
 
@@ -77,8 +92,8 @@ insets change.
 
 - `placement: GranularPlacement`: any of `top`, `right`, `bottom`, `left`, `width`, `height`, in the screen (or the
   provider). Missing values stretch to the edges; `{}` (the default) is the whole screen.
-- `options: SafeAreaInsetsForOptions`: `edges`, `granular`, `avoid`, `spacing`, and `scrollable` (`'vertical'` or
-  `'horizontal'`, when the element is in a scroll view).
+- `options: SafeAreaInsetsForOptions`: `edges`, `granular`, `avoidScrollingEdges`, `avoid`, `spacing`, and `scrollable`
+  (`'vertical'` or `'horizontal'`, when the element is in a scroll view).
 
 ### `useSafeAreaRegions(): readonly SafeAreaRegion[]`
 
@@ -106,6 +121,7 @@ bar, or `null`.
 ```ts
 type SystemControls = {
   edge: Edge; // the edge the strip runs along
+  hasBars: boolean; // true when the system places navigation/tab bar controls here (false in Duo open landscape)
   strip: Rect; // the whole strip: the inset band on that edge
   occupied: Rect[]; // the status cluster, the system's controls, the system back button, the end beyond where controls go
   free: Rect[]; // the stretches nothing occupies, from start to end
@@ -127,7 +143,9 @@ window of regular width, and `'bottom'` everywhere else (including the Duo open 
 
 Classifies the current device's form factor, posture, hardware/OS metadata, and whether granular safe areas are
 currently active. Re-renders only when any of these fields change (e.g. folding/unfolding, resizing a window, or
-falling back to band avoidance).
+falling back to band avoidance). Use `hasVerticalBar` (or `verticalBarEdge`) when sheets or overlays need to know
+whether the system places bars in a vertical side column (e.g. closed iPhone Duo, where sheets float clear of the
+bottom; `false` in open landscape where sheets sit at the bottom as usual).
 
 ```ts
 type SafeAreaDeviceInfo = {
@@ -135,6 +153,7 @@ type SafeAreaDeviceInfo = {
   posture: 'standard' | 'folded' | 'unfolded' | 'half-opened' | 'windowed';
   platform: 'ios' | 'android' | 'web' | 'unknown';
   hasVerticalBar: boolean;
+  verticalBarEdge: 'left' | 'right' | null;
   hasFold: boolean;
   isFoldActive: boolean;
   granularSupported: boolean;
@@ -179,8 +198,9 @@ place of your own.
 `SystemBackButton` takes the options plus `children`, your own back button, shown where the system's isn't, and
 `keepSpace` (`false`): keep your button laid out but invisible while the system shows its own, instead of unmounting it.
 
-The most recent screen that is showing gets the button: in the window, and not hidden or fully transparent through an
-ancestor (`opacity: 0`, `display: 'none'`), checked after every React Native update.
+The most recent screen that is showing gets the button: in the window, not hidden or fully transparent through an
+ancestor (`opacity: 0`, `display: 'none'`), and drawn inside the window and any clipping ancestors — including when slid
+off screen with a transform (`translateY`) or animated on the UI thread.
 `useSystemBackButton` returns `{ shown: boolean; button: ReactElement }`: render `button` anywhere in the screen, and
 hide your own while `shown`.
 
@@ -212,7 +232,8 @@ renders one; without a provider, render it last in the app's root view. Takes an
 
 ### Types
 
-`SafeAreaViewProps`, `SafeAreaAccessoryProps`, `SafeAreaDefaultsOptions`, `UseSafeAreaStyleOptions`, `SafeAreaStyle`,
+`SafeAreaViewProps`, `SafeAreaAccessoryProps`, `SafeAreaDefaultsOptions`, `UseSafeAreaStyleOptions`,
+`UseSafeAreaViewStyleOptions`, `SafeAreaStyle`,
 `GranularSafeAreaDebugOverlayProps`, `SafeAreaInsetsForOptions`, `GranularInsetsOptions`,
 `GranularSafeAreaMode`, `GranularPlacement`, `SafeAreaRegion`, `SafeAreaRegionKind`, `SystemControls`,
 `SafeAreaDeviceInfo`, `SafeAreaDeviceType`, `SafeAreaDevicePosture`,
@@ -261,13 +282,21 @@ a JS stack, a tab navigator's own screens) nothing draws them: render the screen
 
 ## `/jest`
 
-The main entry's exports for Jest. `SafeAreaView` and `SafeAreaAccessory` render a `View`, `useSafeAreaViewInsets` and
-`useSafeAreaStyle` give zero insets. By default there's nothing to avoid; with `<GranularSafeAreaProvider mock={...}>`
-or `mockSafeAreaMetrics(metrics | null)`, the hooks compute what they would on that device (`useSafeAreaRegions`,
-`useSystemControls`, `useSafeAreaInsetsFor`, `useTabBarEdge`, `useSafeAreaDevice`, `useSafeAreaDiagnostics`,
-`useSystemHeaderItems`, which leaves the screen's options alone), and `SystemBackButton` shows a pressable stand-in with the test ID `SystemBackButton` where the system
-would show its button, with props `icon` and `systemImage` (the SF Symbol the system draws). react-native-safe-area-context
-comes through as is, so mock it too:
+The main entry's exports for Jest. By default there's nothing to avoid, so `SafeAreaView` and `SafeAreaAccessory` render
+plain `View`s with no insets. With `<GranularSafeAreaProvider mock={...}>` or `mockSafeAreaMetrics(metrics | null)`:
+
+- `SafeAreaView`, `SafeAreaAccessory`, `SafeAreaDefaults`, `useSafeAreaStyle`, `useSafeAreaViewInsets` and
+  `useSafeAreaViewStyle` apply the mocked metrics' band insets (`padding`, `margin`, `offset`, `mode="none"`, `gap` and
+  `onInsetsChange`).
+- The hooks compute what they would on that device (`useSafeAreaRegions`, `useSystemControls`, `useSafeAreaInsetsFor`,
+  `useTabBarEdge`, `useSafeAreaDevice`, `useSafeAreaDiagnostics`, `useSystemHeaderItems`, which leaves the screen's
+  options alone).
+- `SystemBackButton` shows a pressable stand-in with the test ID `SystemBackButton` where the system would show its
+  button, with props `icon` and `systemImage` (the SF Symbol the system draws).
+- `getSystemHeaderItems()` tracks rendered screens synchronously, so it keeps working even after synchronous `act`
+  calls.
+
+`react-native-safe-area-context` comes through as is, so mock it too:
 
 ```ts
 jest.mock('react-native-granular-safe-areas', () => require('react-native-granular-safe-areas/jest'));

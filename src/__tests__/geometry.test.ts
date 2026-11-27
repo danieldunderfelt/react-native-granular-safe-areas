@@ -477,6 +477,59 @@ describe('safeAreaViewInsets', () => {
     it('avoids what it overlaps right now outside scroll views too', () => {
       expect(view(badgeAt(300), { dynamic: true }).right).toBe(0);
     });
+
+    it('lets dynamic cards in a horizontal carousel avoid the side column when requesting horizontal edges', () => {
+      const horizontal = { vertical: false, horizontal: true };
+      const cardAt = (x: number, y = 40) => ({ x, y, width: 280, height: 120 });
+      // Overlapping the Duo right status cluster (x=382..466, y=0..174) -> pushes in by overlap.
+      expect(
+        view(cardAt(160), {
+          dynamic: true,
+          scroll: horizontal,
+          edges: ['left', 'right'],
+        }).right
+      ).toBe(440 - 382);
+      // Scrolled clear of the right column -> zero.
+      expect(
+        view(cardAt(80), {
+          dynamic: true,
+          scroll: horizontal,
+          edges: ['right'],
+        }).right
+      ).toBe(0);
+      // Horizontal carousel nested inside a vertical scroll view still avoids the side column while leaving top/bottom
+      // to the vertical scroll view.
+      expect(
+        view(cardAt(160), {
+          dynamic: true,
+          scroll: { vertical: true, horizontal: true },
+          edges: ['left', 'right'],
+        })
+      ).toEqual({ top: 0, right: 440 - 382, bottom: 0, left: 0 });
+    });
+
+    it('keeps scrolling edges when avoidScrollingEdges is set (dynamic and static)', () => {
+      const horizontal = { vertical: false, horizontal: true };
+      const card = { x: 160, y: 40, width: 280, height: 120 };
+      // Dynamic with default all-four edges.
+      expect(
+        view(card, {
+          dynamic: true,
+          scroll: horizontal,
+          avoidScrollingEdges: true,
+        }).right
+      ).toBe(440 - 382);
+      // Static view in a horizontal scroll view avoids the full side band when opted in.
+      expect(
+        view(card, {
+          scroll: horizontal,
+          avoidScrollingEdges: true,
+        }).right
+      ).toBe(84);
+      // Encoded in bit 4 (16) of the native edges mask.
+      expect(edgeMask(['right'])).toBe(2);
+      expect(edgeMask(['right'], true)).toBe(18);
+    });
   });
 });
 
@@ -1181,6 +1234,7 @@ describe('iPad window controls', () => {
 describe('getSystemControls on the iPhone Duo', () => {
   it('has the status cluster, where controls start, and the camera', () => {
     const controls = getSystemControls(duo)!;
+    expect(controls.hasBars).toBe(true);
     expect(controls.status).toEqual({ x: 382, y: 0, width: 84, height: 174 });
     expect(controls.start).toBe(174);
     // The camera, not the occlusion that covers the whole cluster.
@@ -1200,6 +1254,7 @@ describe('getSystemControls on the iPhone Duo', () => {
   it('follows the bar to the left in landscape, below the camera', () => {
     const controls = getSystemControls(fixtures.iPhoneDuoOuterLandscape)!;
     expect(controls.edge).toBe('left');
+    expect(controls.hasBars).toBe(true);
     expect(controls.start).toBe(82);
     expect(controls.cameras).toHaveLength(1);
     expect(controls.cameras[0]!.x).toBeLessThan(84);
@@ -1207,6 +1262,7 @@ describe('getSystemControls on the iPhone Duo', () => {
 
   it('has no camera where it is off, open in landscape, and refines the status strip alongside a bottom tab bar', () => {
     const controls = getSystemControls(fixtures.iPhoneDuoInnerLandscape)!;
+    expect(controls.hasBars).toBe(false);
     expect(controls.cameras).toEqual([]);
     expect(controls.status).toEqual({ x: 867, y: 0, width: 84, height: 124 });
     expect(controls.start).toBe(124);

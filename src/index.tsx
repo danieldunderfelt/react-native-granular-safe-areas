@@ -9,11 +9,13 @@ export {
   SafeAreaView,
   useSafeAreaStyle,
   useSafeAreaViewInsets,
+  useSafeAreaViewStyle,
   type SafeAreaAccessoryProps,
   type SafeAreaDefaultsOptions,
   type SafeAreaStyle,
   type SafeAreaViewProps,
   type UseSafeAreaStyleOptions,
+  type UseSafeAreaViewStyleOptions,
 } from './SafeAreaView';
 
 // Insets for a position you describe, the regions themselves, device detection, and the strip the system puts its controls in.

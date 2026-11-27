@@ -156,6 +156,14 @@ export type GranularInsetsOptions = {
    * the scroll axis isn't fixed, it avoids whole bands anyway; use `dynamic` there. Defaults to `false`.
    */
   granular?: boolean;
+  /**
+   * Keep avoiding regions on a scroll view's scrolling edges (`left`/`right` in a horizontal scroll view,
+   * `top`/`bottom` in a vertical scroll view) instead of leaving them to the scroll view's content inset. Useful for
+   * cards in a horizontal carousel that should avoid a side column. For `dynamic` views whose active `edges` all lie
+   * on the scrolling axis (e.g. `edges={['right']}` in a horizontal carousel), scrolling edges are avoided
+   * automatically. Defaults to `false`.
+   */
+  avoidScrollingEdges?: boolean;
 };
 
 /** Which way the scroll views around an element scroll. */

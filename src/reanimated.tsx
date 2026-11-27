@@ -136,6 +136,7 @@ function NativeAnimatedSafeAreaView({
   spacing,
   granular,
   dynamic,
+  avoidScrollingEdges,
   underlying,
   onInsetsChange,
   transition,
@@ -152,6 +153,7 @@ function NativeAnimatedSafeAreaView({
     spacing,
     granular,
     dynamic,
+    avoidScrollingEdges,
     underlying,
     onInsetsChange,
     ref,
@@ -206,7 +208,10 @@ function NativeAnimatedSafeAreaView({
       onInsetsChange={handleInsetsChange as unknown as NativeInsetsHandler}
       style={[style, margin?.style, animatedStyle]}
     >
-      <ChildInsets insets={mode === 'offset' ? ZERO_INSETS : native.insets}>
+      <ChildInsets
+        insets={mode === 'offset' ? ZERO_INSETS : native.insets}
+        modes={native.modes}
+      >
         {children}
       </ChildInsets>
     </NativeView>

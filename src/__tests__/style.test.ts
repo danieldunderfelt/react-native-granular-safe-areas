@@ -100,6 +100,20 @@ describe('layoutAdjustment', () => {
       style: { marginRight: 84 },
       added: { top: 0, right: 68, bottom: 0, left: 0 },
     });
+
+    // When combining outer-box insets with an inner element's margin (`useSafeAreaViewStyle`), maximum uses Math.max.
+    expect(
+      layoutAdjustment({ marginRight: 16 }, right, 'margin', maximum, true)
+    ).toEqual({
+      style: { marginRight: 84 },
+      added: { top: 0, right: 68, bottom: 0, left: 0 },
+    });
+    expect(
+      layoutAdjustment({ marginRight: 100 }, right, 'margin', maximum, true)
+    ).toEqual({
+      style: null,
+      added: { top: 0, right: 0, bottom: 0, left: 0 },
+    });
   });
 
   describe('right to left', () => {

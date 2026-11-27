@@ -266,6 +266,7 @@ describe('getSystemControls on Android', () => {
       getSystemControls(desktop, [{ x: 56, y: 4, width: 32, height: 32 }])
     ).toEqual({
       edge: 'top',
+      hasBars: true,
       strip: { x: 0, y: 0, width: 800, height: 40 },
       occupied: [
         { x: 0, y: 0, width: 48, height: 40 },

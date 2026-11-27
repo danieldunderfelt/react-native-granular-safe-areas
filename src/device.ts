@@ -1,5 +1,5 @@
 import { detectMetricsFallback } from './fallback';
-import { usesVerticalBarForControls } from './geometry';
+import { resolveVerticalBarEdge, usesVerticalBarForControls } from './geometry';
 import type { GranularSafeAreaMetrics } from './types';
 
 /** Broad device form factor derived from the platform's safe-area metrics. */
@@ -18,8 +18,14 @@ export type SafeAreaDeviceInfo = {
   posture: SafeAreaDevicePosture;
   /** Platform the metrics came from, or `'unknown'` before metrics arrive. */
   platform: 'ios' | 'android' | 'web' | 'unknown';
-  /** `true` when the system places vertical bars along a side edge (e.g. iPhone Duo closed, or open in landscape). */
+  /**
+   * `true` when the system places navigation and tab bar controls in a vertical bar along a side edge (e.g. iPhone
+   * Duo closed, where sheets float clear of the bottom). `false` in Duo open landscape where only the status cluster
+   * sits in the side column.
+   */
   hasVerticalBar: boolean;
+  /** The physical side edge holding the vertical bar when `hasVerticalBar` is `true`, or `null` otherwise. */
+  verticalBarEdge: 'left' | 'right' | null;
   /** `true` when the display reports a fold/hinge division (even when flat/unfolded). */
   hasFold: boolean;
   /** `true` when a fold/hinge is currently active (e.g. half-opened / book / tabletop posture). */
@@ -53,6 +59,7 @@ export const UNKNOWN_DEVICE: SafeAreaDeviceInfo = Object.freeze({
   posture: 'standard',
   platform: 'unknown',
   hasVerticalBar: false,
+  verticalBarEdge: null,
   hasFold: false,
   isFoldActive: false,
   granularSupported: false,
@@ -91,6 +98,7 @@ export function getDeviceInfo(
       posture: 'standard',
       platform: 'web',
       hasVerticalBar: false,
+      verticalBarEdge: null,
       hasFold: false,
       isFoldActive: false,
       granularSupported: false,
@@ -103,6 +111,9 @@ export function getDeviceInfo(
   const hasFold = metrics.divisions.length > 0;
   const isFoldActive = metrics.divisions.some((d) => d.active);
   const hasVerticalBar = usesVerticalBarForControls(metrics);
+  const verticalBarEdge = hasVerticalBar
+    ? resolveVerticalBarEdge(metrics)
+    : null;
   const idiom = metrics.idiom ?? null;
 
   const fallback =
@@ -147,6 +158,7 @@ export function getDeviceInfo(
     posture,
     platform: metrics.platform,
     hasVerticalBar,
+    verticalBarEdge,
     hasFold,
     isFoldActive,
     granularSupported,
@@ -165,6 +177,7 @@ export function deviceInfoEqual(
     a.posture === b.posture &&
     a.platform === b.platform &&
     a.hasVerticalBar === b.hasVerticalBar &&
+    a.verticalBarEdge === b.verticalBarEdge &&
     a.hasFold === b.hasFold &&
     a.isFoldActive === b.isFoldActive &&
     a.granularSupported === b.granularSupported &&

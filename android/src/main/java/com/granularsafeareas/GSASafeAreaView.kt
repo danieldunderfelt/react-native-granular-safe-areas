@@ -331,18 +331,27 @@ class GSASafeAreaView(context: ThemedReactContext) : ReactViewGroup(context) {
 
     // A position along a scroll axis isn't fixed, so a view that doesn't follow it has to avoid whole bands, measured
     // as if it covered all of the scroll view it can be seen in. Regions on the edges it scrolls towards are the
-    // scroll view's content inset's.
+    // scroll view's content inset's, unless `avoidScrollingEdges` is set or a dynamic view only asks for edges on that
+    // axis.
     val useRegions = dynamic || (granular && axes == 0)
+    val edgeBits = edges and (TOP or RIGHT or BOTTOM or LEFT)
+    val avoidScrolling = edges and AVOID_SCROLLING_EDGES != 0
     var ignored = 0
     if (axes and GSAViews.VERTICAL != 0) {
-      ignored = ignored or TOP or BOTTOM
+      val axisBits = TOP or BOTTOM
+      if (!avoidScrolling && !(dynamic && edgeBits != 0 && edgeBits and axisBits.inv() == 0)) {
+        ignored = ignored or axisBits
+      }
       if (!dynamic) {
         rect.top = visible.top
         rect.bottom = visible.bottom
       }
     }
     if (axes and GSAViews.HORIZONTAL != 0) {
-      ignored = ignored or LEFT or RIGHT
+      val axisBits = LEFT or RIGHT
+      if (!avoidScrolling && !(dynamic && edgeBits != 0 && edgeBits and axisBits.inv() == 0)) {
+        ignored = ignored or axisBits
+      }
       if (!dynamic) {
         rect.left = visible.left
         rect.right = visible.right
@@ -532,11 +541,12 @@ class GSASafeAreaView(context: ThemedReactContext) : ReactViewGroup(context) {
   }
 
   private companion object {
-    /** Edge bits, as in the `edges` prop. */
+    /** Edge bits, as in the `edges` prop (plus bit 16 for `avoidScrollingEdges`). */
     const val TOP = 1
     const val RIGHT = 2
     const val BOTTOM = 4
     const val LEFT = 8
+    const val AVOID_SCROLLING_EDGES = 16
 
     fun regionsFrom(value: ReadableArray?): List<Region> {
       value ?: return emptyList()

@@ -14,10 +14,16 @@ import {
   getSystemHeaderItems,
   GranularSafeAreaProvider,
   mockSafeAreaMetrics,
+  SafeAreaAccessory,
+  SafeAreaDefaults,
+  SafeAreaView,
   SystemBackButton,
   useSafeAreaDevice,
   useSafeAreaDiagnostics,
   useSafeAreaInsetsFor,
+  useSafeAreaStyle,
+  useSafeAreaViewInsets,
+  useSafeAreaViewStyle,
   useSystemControls,
   useSystemHeaderItems,
   useTabBarEdge,
@@ -230,13 +236,170 @@ describe('the Jest mock', () => {
       1
     );
   });
+
+  it('applies band insets in SafeAreaView, SafeAreaAccessory, SafeAreaDefaults and hooks when metrics are mocked', () => {
+    const hostByTestId = (tree: ReactTestRenderer, testID: string) =>
+      tree.root.find(
+        (node) => node.props.testID === testID && typeof node.type === 'string'
+      );
+
+    const onInsets = jest.fn();
+    // Without mocked metrics: untouched plain View, no onInsetsChange.
+    const plain = render(
+      <SafeAreaView
+        testID="plain"
+        edges={['right']}
+        gap={16}
+        style={{ paddingRight: 16 }}
+        onInsetsChange={onInsets}
+      />
+    );
+    expect(hostByTestId(plain, 'plain').props.style).toEqual({
+      paddingRight: 16,
+    });
+    expect(onInsets).not.toHaveBeenCalled();
+    act(() => plain.unmount());
+
+    // With Duo metrics: band padding, margin (with gap), offset, mode="none", SafeAreaDefaults, and hooks.
+    mockSafeAreaMetrics(fixtures.iPhoneDuoOuterPortrait);
+    const seen = jest.fn();
+    function ChildReader() {
+      seen({
+        insets: useSafeAreaViewInsets(),
+        contentStyle: useSafeAreaViewStyle({
+          paddingHorizontal: 16,
+          paddingBottom: 24,
+        }),
+        largeContentStyle: useSafeAreaViewStyle({ paddingRight: 120 }),
+        marginStyle: useSafeAreaViewStyle(
+          { marginRight: 16 },
+          { mode: 'margin' }
+        ),
+      });
+      return null;
+    }
+    let hookStyle!: ReturnType<typeof useSafeAreaStyle>;
+    const onStyleInsets = jest.fn();
+    function StyleHookProbe() {
+      hookStyle = useSafeAreaStyle({
+        edges: ['right'],
+        gap: 16,
+        style: { paddingRight: 16 },
+        onInsetsChange: onStyleInsets,
+      });
+      return hookStyle.probe;
+    }
+
+    const onNoneInsets = jest.fn();
+    const tree = render(
+      <SafeAreaDefaults edges={['left', 'right']} gap={16}>
+        <SafeAreaView testID="pad" style={{ paddingHorizontal: 16 }} />
+        <SafeAreaView
+          testID="margin"
+          mode="margin"
+          style={{ marginRight: 16 }}
+        />
+        <SafeAreaView
+          testID="margin-clear"
+          mode="margin"
+          style={{ marginRight: 120 }}
+        />
+        <SafeAreaView testID="offset" mode="offset" gap={0} />
+        <SafeAreaView
+          testID="none"
+          mode="none"
+          edges={['right', 'bottom']}
+          onInsetsChange={onNoneInsets}
+        >
+          <ChildReader />
+        </SafeAreaView>
+        <SafeAreaAccessory testID="accessory" style={{ paddingRight: 8 }} />
+        <StyleHookProbe />
+      </SafeAreaDefaults>
+    );
+
+    expect(hostByTestId(tree, 'pad').props.style).toEqual([
+      { paddingHorizontal: 16 },
+      { paddingRight: 100 },
+    ]);
+    expect(hostByTestId(tree, 'margin').props.style).toEqual([
+      { marginRight: 16 },
+      { marginRight: 100 },
+    ]);
+    expect(hostByTestId(tree, 'margin-clear').props.style).toEqual({
+      marginRight: 120,
+    });
+    expect(hostByTestId(tree, 'offset').props.style).toEqual([
+      undefined,
+      { transform: [{ translateX: -84 }, { translateY: 0 }] },
+    ]);
+    expect(hostByTestId(tree, 'none').props.style).toBeUndefined();
+    expect(onNoneInsets).toHaveBeenLastCalledWith({
+      top: 0,
+      right: 100,
+      bottom: 50,
+      left: 0,
+    });
+    expect(seen).toHaveBeenLastCalledWith({
+      insets: { top: 0, right: 100, bottom: 50, left: 0 },
+      contentStyle: { paddingRight: 100, paddingBottom: 50 },
+      largeContentStyle: { paddingBottom: 50 },
+      marginStyle: { marginRight: 100, marginBottom: 50 },
+    });
+    expect(hostByTestId(tree, 'accessory').props.style).toEqual([
+      { paddingRight: 8 },
+      { paddingRight: 100 },
+    ]);
+    expect(hookStyle.style).toEqual({ paddingRight: 100 });
+    expect(hookStyle.insets).toEqual({
+      top: 0,
+      right: 100,
+      bottom: 0,
+      left: 0,
+    });
+    expect(onStyleInsets).toHaveBeenLastCalledWith({
+      top: 0,
+      right: 100,
+      bottom: 0,
+      left: 0,
+    });
+  });
+
+  it('reports hasVerticalBar / verticalBarEdge and systemControls.hasBars accurately for sheets', () => {
+    const seen = jest.fn();
+    function SheetProbe() {
+      const device = useSafeAreaDevice();
+      const controls = useSystemControls();
+      seen({
+        hasVerticalBar: device.hasVerticalBar,
+        verticalBarEdge: device.verticalBarEdge,
+        hasBars: controls?.hasBars ?? false,
+      });
+      return null;
+    }
+
+    mockSafeAreaMetrics(fixtures.iPhoneDuoOuterPortrait);
+    render(<SheetProbe />);
+    expect(seen).toHaveBeenLastCalledWith({
+      hasVerticalBar: true,
+      verticalBarEdge: 'right',
+      hasBars: true,
+    });
+
+    act(() => mockSafeAreaMetrics(fixtures.iPhoneDuoInnerLandscape));
+    expect(seen).toHaveBeenLastCalledWith({
+      hasVerticalBar: false,
+      verticalBarEdge: null,
+      hasBars: false,
+    });
+  });
 });
 
 function HeaderScreen({
   onShare,
   enabled,
 }: {
-  onShare: () => void;
+  onShare: () => unknown;
   enabled?: boolean;
 }) {
   const { shown } = useSystemHeaderItems({
@@ -264,7 +427,9 @@ describe('useSystemHeaderItems in the Jest mock', () => {
       headerLeftItems: [],
       headerBackVisible: true,
     });
-    act(() => items!.headerRightItems[0]!.onPress!());
+    act(() => {
+      items!.headerRightItems[0]!.onPress!();
+    });
     expect(second).toHaveBeenCalledTimes(1);
     expect(first).not.toHaveBeenCalled();
 
@@ -274,6 +439,35 @@ describe('useSystemHeaderItems in the Jest mock', () => {
     expect(getSystemHeaderItems()).not.toBeNull();
     act(() => tree.unmount());
     expect(getSystemHeaderItems()).toBeNull();
+  });
+
+  it('keeps working in later renders after pressing an async handler in a synchronous act', async () => {
+    mockSafeAreaMetrics(fixtures.iPhoneDuoOuterPortrait);
+    const asyncShare = jest.fn(async () => {
+      await Promise.resolve();
+    });
+    const first = render(<HeaderScreen onShare={asyncShare} />);
+    const items = getSystemHeaderItems();
+    expect(items).not.toBeNull();
+    // Pressing an async handler in a synchronous `act` with an implicit return must not return a Promise to React 19's
+    // `act`, which would otherwise leave `actScopeDepth` stuck and prevent later tests from running layout effects.
+    act(() => items!.headerRightItems[0]!.onPress!());
+    expect(asyncShare).toHaveBeenCalledTimes(1);
+
+    await Promise.resolve();
+    act(() => first.unmount());
+    mockSafeAreaMetrics(null);
+    expect(getSystemHeaderItems()).toBeNull();
+
+    mockSafeAreaMetrics(fixtures.iPhoneDuoOuterPortrait);
+    const nextShare = jest.fn();
+    render(<HeaderScreen onShare={nextShare} />);
+    const nextItems = getSystemHeaderItems();
+    expect(nextItems).not.toBeNull();
+    act(() => {
+      nextItems!.headerRightItems[0]!.onPress!();
+    });
+    expect(nextShare).toHaveBeenCalledTimes(1);
   });
 });
 

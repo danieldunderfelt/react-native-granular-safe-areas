@@ -10,11 +10,13 @@
 //   mockSafeAreaMetrics(fixtures.iPhoneDuoOuterPortrait); // from 'react-native-granular-safe-areas/jest'
 //
 // Then the hooks compute what they would on that device (regions, system controls, `useSafeAreaInsetsFor`,
-// `useTabBarEdge`), and `SystemBackButton` hides your button where the system shows its own, rendering a pressable
-// stand-in with the test ID `SystemBackButton` that calls the `onPress` of the screen that would get it, and carries
-// its `icon` and the SF Symbol the system would draw (`systemImage`). `useSystemHeaderItems` returns `shown`, and
-// `getSystemHeaderItems()` gives the items the system would show, to check and press. Views still render as plain
-// `View`s: nothing is laid out in Jest, so there's nothing for them to measure.
+// `useTabBarEdge`), `SafeAreaView`, `SafeAreaAccessory`, `SafeAreaDefaults`, `useSafeAreaStyle`,
+// `useSafeAreaViewInsets` and `useSafeAreaViewStyle` apply the mocked metrics' band insets (supporting `padding`,
+// `margin`, `offset`, `none`, `gap` and `onInsetsChange`), and `SystemBackButton` hides your button where the system
+// shows its own, rendering a pressable stand-in with the test ID `SystemBackButton` that calls the `onPress` of the
+// screen that would get it, and carries its `icon` and the SF Symbol the system would draw (`systemImage`).
+// `useSystemHeaderItems` returns `shown`, and `getSystemHeaderItems()` gives the items the system would show, to check
+// and press.
 //
 // Everything from react-native-safe-area-context comes through as is; mock it as its README says.
 import {
@@ -28,7 +30,13 @@ import {
   type ReactElement,
   type ReactNode,
 } from 'react';
-import { Pressable, View, type ViewProps } from 'react-native';
+import {
+  Pressable,
+  View,
+  type StyleProp,
+  type ViewProps,
+  type ViewStyle,
+} from 'react-native';
 import {
   checkDiagnostics,
   type CheckDiagnosticsOptions,
@@ -54,6 +62,7 @@ import {
   edgeModes,
   getTabBarEdge,
   getVerticalBar,
+  insetsEqual,
   placementToRect,
   safeAreaViewInsets,
   ZERO_INSETS,
@@ -61,13 +70,20 @@ import {
   type SystemControls,
 } from './geometry';
 import type { SafeAreaInsetsForOptions } from './hooks';
+import {
+  mergeDefaults,
+  resolveSafeAreaProps,
+  type SafeAreaDefaultsOptions,
+} from './resolveProps';
 import type {
   SafeAreaAccessoryProps,
-  SafeAreaDefaultsOptions,
   SafeAreaStyle,
   SafeAreaViewProps,
+  UseSafeAreaStyleOptions,
+  UseSafeAreaViewStyleOptions,
 } from './SafeAreaView';
 import { backButtonSystemImage, GranularSafeAreaStore } from './store';
+import { flattenStyle, layoutAdjustment, offsetStyle, ownEdges } from './style';
 import type {
   SystemBackButtonProps,
   UseSystemBackButtonOptions,
@@ -76,7 +92,9 @@ import type {
 import type {
   Edge,
   EdgeInsets,
+  EdgeMode,
   GranularSafeAreaMetrics,
+  GranularSafeAreaMode,
   SafeAreaRegion,
   SafeAreaRegionKind,
 } from './types';
@@ -114,6 +132,15 @@ const KEPT_SPACE = { opacity: 0 };
  * until it's called again. `null` goes back to a device with nothing to avoid; call that in `afterEach`.
  */
 export function mockSafeAreaMetrics(metrics: GranularSafeAreaMetrics | null) {
+  if (metrics === null) {
+    // Drop default-store header entries so an unmounted tree whose cleanup was skipped by a synchronous `act` cannot
+    // leak into later tests. Any component still mounted re-registers when `defaultStore` notifies it next.
+    for (let i = headerEntries.length - 1; i >= 0; i--) {
+      if (headerEntries[i]!.store === defaultStore) {
+        headerEntries.splice(i, 1);
+      }
+    }
+  }
   publish(defaultStore, metrics);
 }
 
@@ -128,50 +155,212 @@ function useSnapshot() {
   return useSyncExternalStore(store.subscribe, store.getSnapshot);
 }
 
-function viewProps({
+const SafeAreaDefaultsContext = createContext<SafeAreaDefaultsOptions>({});
+
+export function SafeAreaDefaults({
+  children,
+  ...defaults
+}: SafeAreaDefaultsOptions & { children?: ReactNode }) {
+  const parent = useContext(SafeAreaDefaultsContext);
+  const key = JSON.stringify(defaults);
+  const value = useMemo(
+    () => mergeDefaults(parent, defaults),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [parent, key]
+  );
+  return (
+    <SafeAreaDefaultsContext.Provider value={value}>
+      {children}
+    </SafeAreaDefaultsContext.Provider>
+  );
+}
+
+type SafeAreaViewInsetsContextValue = {
+  insets: EdgeInsets;
+  modes: Readonly<Record<Edge, EdgeMode>>;
+};
+
+const DEFAULT_INSETS_CONTEXT: SafeAreaViewInsetsContextValue = Object.freeze({
+  insets: ZERO_INSETS,
+  modes: edgeModes(undefined),
+});
+
+const SafeAreaViewInsetsContext = createContext<SafeAreaViewInsetsContextValue>(
+  DEFAULT_INSETS_CONTEXT
+);
+
+function computeBandInsets(
+  metrics: GranularSafeAreaMetrics | null,
+  regions: readonly SafeAreaRegion[],
+  bands: readonly SafeAreaRegion[],
+  {
+    edges,
+    avoid,
+    spacing = 0,
+    mode = 'padding',
+    style,
+  }: {
+    edges: readonly Edge[];
+    avoid?: readonly SafeAreaRegionKind[];
+    spacing?: number;
+    mode?: GranularSafeAreaMode;
+    style?: StyleProp<ViewStyle>;
+  }
+): EdgeInsets {
+  if (!metrics) return ZERO_INSETS;
+  let rect = placementToRect({}, metrics);
+  if (mode === 'margin' && style) {
+    // On device, a view's own margin sits outside its laid-out box, so the overlap is measured from inside it.
+    // Shrinking the simulated box by the view's own margin gives the exact same result here (including `gap`).
+    const own = ownEdges(flattenStyle(style), 'margin');
+    const left = typeof own.left.value === 'number' ? own.left.value : 0;
+    const top = typeof own.top.value === 'number' ? own.top.value : 0;
+    const right = typeof own.right.value === 'number' ? own.right.value : 0;
+    const bottom = typeof own.bottom.value === 'number' ? own.bottom.value : 0;
+    rect = {
+      x: left,
+      y: top,
+      width: Math.max(0, metrics.width - left - right),
+      height: Math.max(0, metrics.height - top - bottom),
+    };
+  }
+  return safeAreaViewInsets(rect, {
+    regions,
+    bands,
+    granular: false,
+    edges,
+    ...(avoid !== undefined && { avoid }),
+    spacing,
+    bounds: metrics,
+  });
+}
+
+function useMockBandStyle({
+  edges,
+  mode = 'padding',
+  avoid,
+  spacing = 0,
+  style,
+  onInsetsChange,
+}: Pick<
+  SafeAreaViewProps,
+  'edges' | 'mode' | 'avoid' | 'spacing' | 'style' | 'onInsetsChange'
+>) {
+  const { metrics, regions, bands } = useSnapshot();
+  const modes = edgeModes(edges);
+  const insets = computeBandInsets(metrics, regions, bands, {
+    edges: activeEdges(modes),
+    avoid,
+    spacing,
+    mode,
+    style,
+  });
+  const reported = useRef<EdgeInsets | null>(null);
+  const onInsetsChangeRef = useRef(onInsetsChange);
+  useLayoutEffect(() => {
+    onInsetsChangeRef.current = onInsetsChange;
+  });
+  useLayoutEffect(() => {
+    if (!metrics && !reported.current) return;
+    if (reported.current && insetsEqual(reported.current, insets)) return;
+    reported.current = insets;
+    onInsetsChangeRef.current?.(insets);
+  }, [metrics, insets]);
+
+  const adjusted =
+    mode === 'padding' || mode === 'margin'
+      ? layoutAdjustment(style, insets, mode, modes).style
+      : mode === 'offset'
+        ? offsetStyle(style, insets)
+        : null;
+
+  return { insets, modes, adjusted };
+}
+
+function stripViewProps({
   edges: _edges,
   mode: _mode,
   avoid: _avoid,
   spacing: _spacing,
-  gap: _gap,
   granular: _granular,
   dynamic: _dynamic,
+  avoidScrollingEdges: _avoidScrollingEdges,
   underlying: _underlying,
   onInsetsChange: _onInsetsChange,
   ...props
-}: SafeAreaViewProps): ViewProps {
+}: Omit<SafeAreaViewProps, 'gap'>): ViewProps {
   return props;
 }
 
 export function SafeAreaView(props: SafeAreaViewProps) {
-  return <View {...viewProps(props)} />;
+  const resolved = resolveSafeAreaProps(
+    props,
+    useContext(SafeAreaDefaultsContext)
+  );
+  const { mode = 'padding', style, children } = resolved;
+  const { insets, modes, adjusted } = useMockBandStyle(resolved);
+  const childInsets = mode === 'offset' ? ZERO_INSETS : insets;
+  const contextValue = useMemo(
+    () => ({ insets: childInsets, modes }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      childInsets.top,
+      childInsets.right,
+      childInsets.bottom,
+      childInsets.left,
+      modes.top,
+      modes.right,
+      modes.bottom,
+      modes.left,
+    ]
+  );
+  const viewProps = stripViewProps(resolved);
+  return (
+    <View {...viewProps} style={adjusted ? [style, adjusted] : style}>
+      <SafeAreaViewInsetsContext.Provider value={contextValue}>
+        {children}
+      </SafeAreaViewInsetsContext.Provider>
+    </View>
+  );
 }
 
 export function SafeAreaAccessory({
   edge: _edge,
   ...props
 }: SafeAreaAccessoryProps) {
-  return <View {...viewProps(props)} />;
-}
-
-export function SafeAreaDefaults({
-  children,
-}: SafeAreaDefaultsOptions & { children?: ReactNode }) {
-  return <>{children}</>;
+  return <SafeAreaView {...props} />;
 }
 
 export function useSafeAreaViewInsets(): EdgeInsets {
-  return ZERO_INSETS;
+  return useContext(SafeAreaViewInsetsContext).insets;
 }
 
-const NO_STYLE: SafeAreaStyle = Object.freeze({
-  style: null,
-  insets: ZERO_INSETS,
-  probe: <></>,
-});
+export function useSafeAreaViewStyle(
+  style?: StyleProp<ViewStyle>,
+  options?: UseSafeAreaViewStyleOptions
+): ViewStyle | null {
+  const { insets, modes } = useContext(SafeAreaViewInsetsContext);
+  const mode = options?.mode ?? 'padding';
+  const resolvedModes =
+    options?.edges !== undefined ? edgeModes(options.edges) : modes;
+  return layoutAdjustment(style, insets, mode, resolvedModes, true).style;
+}
 
-export function useSafeAreaStyle(): SafeAreaStyle {
-  return NO_STYLE;
+const EMPTY_PROBE: ReactElement = <></>;
+
+export function useSafeAreaStyle(
+  options: UseSafeAreaStyleOptions = {}
+): SafeAreaStyle {
+  const resolved = resolveSafeAreaProps(
+    options,
+    useContext(SafeAreaDefaultsContext)
+  );
+  const { insets, adjusted } = useMockBandStyle(resolved);
+  return {
+    style: adjusted,
+    insets,
+    probe: EMPTY_PROBE,
+  };
 }
 
 /** Computed from the mocked metrics, as on the device; zero without any. */
@@ -184,7 +373,12 @@ export function useSafeAreaInsetsFor(
   const edgesKey = activeEdges(edgeModes(options.edges)).join(',');
   const avoidKey = (options.avoid ?? []).join(',');
   const hasAvoid = options.avoid !== undefined;
-  const { spacing = 0, granular = false, scrollable } = options;
+  const {
+    spacing = 0,
+    granular = false,
+    avoidScrollingEdges = false,
+    scrollable,
+  } = options;
   return useMemo(() => {
     if (!metrics) return ZERO_INSETS;
     return safeAreaViewInsets(
@@ -193,6 +387,7 @@ export function useSafeAreaInsetsFor(
         regions,
         bands,
         granular,
+        avoidScrollingEdges,
         scroll: {
           vertical: scrollable === 'vertical',
           horizontal: scrollable === 'horizontal',
@@ -220,6 +415,7 @@ export function useSafeAreaInsetsFor(
     hasAvoid,
     spacing,
     granular,
+    avoidScrollingEdges,
     scrollable,
   ]);
 }
@@ -398,7 +594,11 @@ type MockHeaderOptions = {
   enabled?: boolean;
 };
 
-type HeaderEntry = { options: MockHeaderOptions; shown: boolean };
+type HeaderEntry = {
+  options: MockHeaderOptions;
+  shown: boolean;
+  store: GranularSafeAreaStore;
+};
 
 /** Every mounted `useSystemHeaderItems`, oldest first. */
 const headerEntries: HeaderEntry[] = [];
@@ -414,24 +614,70 @@ const headerEntries: HeaderEntry[] = [];
 export function useSystemHeaderItems(options: MockHeaderOptions = {}): {
   shown: boolean;
 } {
+  const store = useStore();
   const { metrics, fallbackToBands } = useSnapshot();
   const bar = !fallbackToBands && metrics ? getVerticalBar(metrics) : null;
   const shown =
     (options.enabled ?? true) && bar !== null && bar.acceptsControls;
-  const entry = useRef<HeaderEntry>({ options, shown });
-  useLayoutEffect(() => {
+  // Register and update synchronously during render so `getSystemHeaderItems()` still works even when a prior
+  // synchronous `act` left layout effects unflushed in the same test file.
+  const entry = useRef<HeaderEntry | null>(null);
+  if (entry.current === null) {
+    entry.current = { options, shown, store };
+  } else {
     entry.current.options = options;
     entry.current.shown = shown;
-  });
+    entry.current.store = store;
+  }
+  if (!headerEntries.includes(entry.current)) {
+    headerEntries.push(entry.current);
+  }
   useLayoutEffect(() => {
-    const current = entry.current;
-    headerEntries.push(current);
+    const current = entry.current!;
+    if (!headerEntries.includes(current)) {
+      headerEntries.push(current);
+    }
     return () => {
       const index = headerEntries.indexOf(current);
       if (index !== -1) headerEntries.splice(index, 1);
     };
   }, []);
   return { shown };
+}
+
+function isHeaderEntryActive(entry: HeaderEntry): boolean {
+  if (!entry.shown) return false;
+  const { metrics, fallbackToBands } = entry.store.getSnapshot();
+  const bar = !fallbackToBands && metrics ? getVerticalBar(metrics) : null;
+  return bar !== null && bar.acceptsControls;
+}
+
+function wrapHeaderItem<Item>(item: Item): Item {
+  if (!item || typeof item !== 'object') return item;
+  const record = item as Record<string, unknown>;
+  let changed = false;
+  const copy: Record<string, unknown> = { ...record };
+  if (typeof record.onPress === 'function') {
+    const fn = record.onPress as (...args: unknown[]) => unknown;
+    // Match UIKit and `fireEvent.press` (void return) so `act(() => item.onPress())` never returns a Promise into
+    // React 19's synchronous `act`, which would otherwise leave `actScopeDepth` stuck and break later tests in the file.
+    copy.onPress = (...args: unknown[]): void => {
+      fn(...args);
+    };
+    changed = true;
+  }
+  if (record.menu && typeof record.menu === 'object') {
+    const menu = record.menu as Record<string, unknown>;
+    if (Array.isArray(menu.items)) {
+      copy.menu = { ...menu, items: menu.items.map(wrapHeaderItem) };
+      changed = true;
+    }
+  }
+  if (Array.isArray(record.items)) {
+    copy.items = record.items.map(wrapHeaderItem);
+    changed = true;
+  }
+  return changed ? (copy as Item) : item;
 }
 
 /**
@@ -443,18 +689,25 @@ export function useSystemHeaderItems(options: MockHeaderOptions = {}): {
  * mockSafeAreaMetrics(fixtures.iPhoneDuoOuterPortrait);
  * render(<TripDetails />);
  * const share = getSystemHeaderItems()?.headerRightItems.find((item) => item.label === 'Share');
- * act(() => share!.onPress!());
+ * act(() => {
+ *   share!.onPress!();
+ * });
  * ```
  */
 export function getSystemHeaderItems<
   Item = MockSystemHeaderItem,
 >(): MockSystemHeaderItems<Item> | null {
   for (let i = headerEntries.length - 1; i >= 0; i--) {
-    const { options, shown } = headerEntries[i]!;
-    if (!shown) continue;
+    const entry = headerEntries[i]!;
+    if (!isHeaderEntryActive(entry)) continue;
+    const { options } = entry;
     return {
-      headerRightItems: (options.headerRightItems ?? []) as readonly Item[],
-      headerLeftItems: (options.headerLeftItems ?? []) as readonly Item[],
+      headerRightItems: (options.headerRightItems ?? []).map((item) =>
+        wrapHeaderItem(item as Item)
+      ),
+      headerLeftItems: (options.headerLeftItems ?? []).map((item) =>
+        wrapHeaderItem(item as Item)
+      ),
       headerBackVisible: options.headerBackVisible ?? true,
     };
   }
@@ -477,11 +730,17 @@ export {
   type DiagnosticCheck,
   type DiagnosticCheckStatus,
   type DiagnosticsCheckResult,
+  type SafeAreaAccessoryProps,
+  type SafeAreaDefaultsOptions,
   type SafeAreaDeviceInfo,
   type SafeAreaDevicePosture,
   type SafeAreaDeviceType,
   type SafeAreaDiagnosticReport,
+  type SafeAreaStyle,
   type SafeAreaUnavailableReason,
+  type SafeAreaViewProps,
   type UseSafeAreaDiagnosticsOptions,
   type UseSafeAreaDiagnosticsResult,
+  type UseSafeAreaStyleOptions,
+  type UseSafeAreaViewStyleOptions,
 };

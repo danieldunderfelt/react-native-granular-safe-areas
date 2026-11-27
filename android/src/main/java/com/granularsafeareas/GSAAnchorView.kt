@@ -1,5 +1,6 @@
 package com.granularsafeareas
 
+import android.graphics.RectF
 import android.os.Handler
 import android.os.Looper
 import android.view.View
@@ -44,13 +45,33 @@ class GSAAnchorView(context: ThemedReactContext) : ReactViewGroup(context) {
     scheduleCheck()
   }
 
-  /** In a window, and no ancestor hidden or fully transparent. The anchor itself is always transparent. */
+  /**
+   * In a window, no ancestor hidden or fully transparent, and drawn inside the window and any clipping ancestors (so a
+   * screen slid off screen with `translateY` or collapsed with `scale: 0` stops owning the system back button).
+   */
   private fun isShowing(): Boolean {
     if (!isAttachedToWindow) return false
+    val root = rootView
     var current = parent as? View
     while (current != null) {
       if (current.visibility != View.VISIBLE || current.alpha < 0.01f) return false
       current = current.parent as? View
+    }
+    if (width > 0 && height > 0 && root.width > 0 && root.height > 0) {
+      val inRoot = RectF(0f, 0f, width.toFloat(), height.toFloat())
+      if (!GSAViews.mapTo(inRoot, this, root, laidOut = false)) return false
+      val rootBounds = RectF(0f, 0f, root.width.toFloat(), root.height.toFloat())
+      if (!RectF.intersects(inRoot, rootBounds)) return false
+      var ancestor = parent as? View
+      while (ancestor != null && ancestor !== root) {
+        if (GSAViews.clips(ancestor)) {
+          val clip = RectF(0f, 0f, ancestor.width.toFloat(), ancestor.height.toFloat())
+          if (GSAViews.mapTo(clip, ancestor, root, laidOut = false) && !RectF.intersects(inRoot, clip)) {
+            return false
+          }
+        }
+        ancestor = ancestor.parent as? View
+      }
     }
     return true
   }

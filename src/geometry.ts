@@ -566,6 +566,11 @@ export type SystemControls = {
    * vertical bar, which the system centers its controls on. Empty where there's none, or it's off.
    */
   cameras: Rect[];
+  /**
+   * Whether the system puts navigation/tab bar controls in this strip (`true` on the iPhone Duo closed and Android
+   * desktop caption bars; `false` on the Duo open in landscape where the strip holds only the status cluster).
+   */
+  hasBars: boolean;
 };
 
 /**
@@ -616,6 +621,7 @@ export function getSystemControls(
     status: bar.top > column.y ? across(column.y, bar.top - column.y) : null,
     start: bar.top,
     cameras: bar.cameras,
+    hasBars: bar.acceptsControls,
   };
 }
 
@@ -756,6 +762,8 @@ export type SafeAreaViewInsetsOptions = ElementInsetsOptions & {
   bands: readonly SafeAreaRegion[];
   granular?: boolean;
   dynamic?: boolean;
+  /** Keep avoiding regions on a scroll view's scrolling edges instead of leaving them to content insets. */
+  avoidScrollingEdges?: boolean;
   /** The scroll views around the element. */
   scroll?: ScrollAxes;
   /**
@@ -766,6 +774,19 @@ export type SafeAreaViewInsetsOptions = ElementInsetsOptions & {
 };
 
 const ALWAYS = () => true;
+
+/** Whether every requested edge lies on `axis` (so ignoring `axis` would make the view avoid nothing at all). */
+function onlyAxisEdges(
+  edges: readonly Edge[],
+  axis: 'vertical' | 'horizontal'
+): boolean {
+  if (edges.length === 0) return false;
+  const onAxis =
+    axis === 'vertical'
+      ? (e: Edge) => e === 'top' || e === 'bottom'
+      : (e: Edge) => e === 'left' || e === 'right';
+  return edges.every(onAxis);
+}
 
 /**
  * The insets a `SafeAreaView` needs at `element`. It avoids what can cover it: system UI, and app UI drawn on top of
@@ -778,8 +799,9 @@ const ALWAYS = () => true;
  *   isn't fixed, so it avoids whole bands there.
  * - `dynamic` avoids only the regions it overlaps right now; it's measured again whenever it moves.
  *
- * In a scroll view, the regions on the edges it scrolls towards are left to the scroll view's content inset, and a
- * view that isn't dynamic is measured as if it covered the whole visible part of the scroll axis.
+ * In a scroll view, the regions on the edges it scrolls towards are left to the scroll view's content inset unless
+ * `avoidScrollingEdges` is set or a `dynamic` view only asks for edges on that axis, and a view that isn't dynamic is
+ * measured as if it covered the whole visible part of the scroll axis.
  * GSASafeAreaView.mm does the same natively; keep the two in step.
  */
 export function safeAreaViewInsets(
@@ -789,6 +811,7 @@ export function safeAreaViewInsets(
     bands,
     granular = false,
     dynamic = false,
+    avoidScrollingEdges = false,
     scroll = NO_SCROLL,
     covers = ALWAYS,
     ...options
@@ -814,10 +837,13 @@ export function safeAreaViewInsets(
           inside.some((region) => contains(band.frame, region.frame, 0.5)))
     );
   }
+  const active = options.edges ?? EDGES;
   let rect = element;
   for (const axis of ['vertical', 'horizontal'] as const) {
     if (!scroll[axis]) continue;
-    avoiding = withoutScrollingEdges(avoiding, axis);
+    const keepAxis =
+      avoidScrollingEdges || (dynamic && onlyAxisEdges(active, axis));
+    if (!keepAxis) avoiding = withoutScrollingEdges(avoiding, axis);
     if (!dynamic) rect = sweepElement(rect, axis, area);
   }
   return computeElementInsets(rect, avoiding, { ...options, visible: area });
@@ -883,9 +909,18 @@ export function nearestEdge(
   return distances.reduce((best, next) => (next[1] < best[1] ? next : best))[0];
 }
 
-/** Edges as bits, for the native side: 1 top, 2 right, 4 bottom, 8 left. */
-export function edgeMask(edges: readonly Edge[]): number {
-  let mask = 0;
+/**
+ * Bit in the native `edges` mask telling the view to keep regions on edges a scroll view scrolls towards, instead of
+ * leaving them to the scroll view's content inset.
+ */
+export const AVOID_SCROLLING_EDGES_BIT = 16;
+
+/** Edges as bits, for the native side: 1 top, 2 right, 4 bottom, 8 left, plus bit 16 for `avoidScrollingEdges`. */
+export function edgeMask(
+  edges: readonly Edge[],
+  avoidScrollingEdges = false
+): number {
+  let mask = avoidScrollingEdges ? AVOID_SCROLLING_EDGES_BIT : 0;
   for (const edge of new Set(edges)) mask += 2 ** (EDGE_CODES[edge] - 1);
   return mask;
 }

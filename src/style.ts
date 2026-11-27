@@ -97,6 +97,22 @@ export type OwnEdge = {
   key: string;
 };
 
+export function flattenStyle(style: StyleProp<ViewStyle>): ViewStyle {
+  if (typeof StyleSheet?.flatten === 'function') {
+    return StyleSheet.flatten(style) ?? {};
+  }
+  if (!style) return {};
+  if (!Array.isArray(style)) {
+    return typeof style === 'object' ? (style as ViewStyle) : {};
+  }
+  const out: Record<string, unknown> = {};
+  for (const item of style) {
+    if (!item) continue;
+    Object.assign(out, Array.isArray(item) ? flattenStyle(item) : item);
+  }
+  return out as ViewStyle;
+}
+
 /**
  * A view's own padding or margin on each physical edge, read the way React Native lays it out: `start`/`end`, the
  * `inline`/`block` aliases, the axis and all-edge shorthands, and right-to-left layouts.
@@ -105,11 +121,11 @@ export function ownEdges(
   flat: ViewStyle,
   kind: LayoutKind
 ): Record<Edge, OwnEdge> {
-  const globalRtl = I18nManager.isRTL === true;
+  const globalRtl = I18nManager?.isRTL === true;
   const rtl =
     flat.direction === 'rtl' || (flat.direction !== 'ltr' && globalRtl);
   // React Native swaps for the whole app, whatever direction a view has.
-  const swap = globalRtl && I18nManager.doLeftAndRightSwapInRTL !== false;
+  const swap = globalRtl && I18nManager?.doLeftAndRightSwapInRTL !== false;
   const style = flat as Record<string, ViewStyle['padding'] | undefined>;
   const out = {} as Record<Edge, OwnEdge>;
   for (const edge of EDGES) {
@@ -151,10 +167,11 @@ export function layoutAdjustment(
   style: StyleProp<ViewStyle>,
   insets: EdgeInsets,
   kind: LayoutKind,
-  modes: Readonly<Record<Edge, EdgeMode>>
+  modes: Readonly<Record<Edge, EdgeMode>>,
+  fromOuterBox = false
 ): LayoutAdjustment {
   if (EDGES.every((edge) => insets[edge] <= 0)) return NO_ADJUSTMENT;
-  const flat: ViewStyle = StyleSheet.flatten(style) ?? {};
+  const flat = flattenStyle(style);
   const own = ownEdges(flat, kind);
   const out: Record<string, number> = {};
   const added: EdgeInsets = { ...ZERO_INSETS };
@@ -166,7 +183,7 @@ export function layoutAdjustment(
       warnPercentage(kind, value);
     const base = typeof value === 'number' ? value : 0;
     const next =
-      kind === 'padding' && mode === 'maximum'
+      (kind === 'padding' || fromOuterBox) && mode === 'maximum'
         ? Math.max(base, insets[edge])
         : base + insets[edge];
     if (next === base) continue;
@@ -197,7 +214,7 @@ export function offsetStyle(
   const dx = insets.left - insets.right;
   const dy = insets.top - insets.bottom;
   if (dx === 0 && dy === 0) return null;
-  const own = StyleSheet.flatten(style)?.transform;
+  const own = flattenStyle(style).transform;
   if (typeof own === 'string') {
     if (__DEV__) {
       console.warn(

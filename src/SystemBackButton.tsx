@@ -42,9 +42,10 @@ export type UseSystemBackButtonResult = {
  * back button stays.
  *
  * When several screens offer one, the most recent screen that is showing wins. A screen is showing while it's in the
- * window and neither it nor an ancestor is hidden or fully transparent (`opacity: 0`, `display: 'none'`), checked after
- * every React Native update; an opacity animated on the UI thread counts from the next one. For anything else that
- * keeps a mounted screen from the user, turn it off with `enabled`. `SystemBackButton` is this hook as a component.
+ * window, neither it nor an ancestor is hidden or fully transparent (`opacity: 0`, `display: 'none'`), and it sits
+ * inside the window and any clipping ancestors — including when slid off screen with a transform (`translateY`) or
+ * animated on the UI thread. For anything else that keeps a mounted screen from the user, turn it off with `enabled`.
+ * `SystemBackButton` is this hook as a component.
  */
 export function useSystemBackButton({
   onPress,

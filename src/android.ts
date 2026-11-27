@@ -243,5 +243,6 @@ export function getAndroidSystemControls(
     status: null,
     start: strip.x,
     cameras: [],
+    hasBars: true,
   };
 }

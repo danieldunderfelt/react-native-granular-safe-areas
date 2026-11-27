@@ -40,8 +40,8 @@ struct GSARegion {
   bool covers;
 };
 
-/// Edge bits, as in the `edges` prop.
-enum : int { GSATop = 1, GSARight = 2, GSABottom = 4, GSALeft = 8 };
+/// Edge bits, as in the `edges` prop (plus bit 16 for `avoidScrollingEdges`).
+enum : int { GSATop = 1, GSARight = 2, GSABottom = 4, GSALeft = 8, GSAAvoidScrollingEdges = 16 };
 /// Scroll axes.
 enum : int { GSAVertical = 1, GSAHorizontal = 2 };
 } // namespace
@@ -567,18 +567,26 @@ static NSArray<NSString *> *GSAObservedLayerKeys(BOOL scrollView)
 
   // A position along a scroll axis isn't fixed, so a view that doesn't follow it has to avoid whole bands, measured
   // as if it covered all of the scroll view it can be seen in. Regions on the edges it scrolls towards are the scroll
-  // view's content inset's.
+  // view's content inset's, unless `avoidScrollingEdges` is set or a dynamic view only asks for edges on that axis.
   const BOOL useRegions = _dynamic || (_granular && axes == 0);
+  const int edgeBits = _edges & (GSATop | GSARight | GSABottom | GSALeft);
+  const BOOL avoidScrolling = (_edges & GSAAvoidScrollingEdges) != 0;
   int ignored = 0;
   if ((axes & GSAVertical) != 0) {
-    ignored |= GSATop | GSABottom;
+    const int axisBits = GSATop | GSABottom;
+    if (!avoidScrolling && !(_dynamic && edgeBits != 0 && (edgeBits & ~axisBits) == 0)) {
+      ignored |= axisBits;
+    }
     if (!_dynamic) {
       rect.origin.y = CGRectGetMinY(visible);
       rect.size.height = CGRectGetHeight(visible);
     }
   }
   if ((axes & GSAHorizontal) != 0) {
-    ignored |= GSALeft | GSARight;
+    const int axisBits = GSALeft | GSARight;
+    if (!avoidScrolling && !(_dynamic && edgeBits != 0 && (edgeBits & ~axisBits) == 0)) {
+      ignored |= axisBits;
+    }
     if (!_dynamic) {
       rect.origin.x = CGRectGetMinX(visible);
       rect.size.width = CGRectGetWidth(visible);
@@ -593,7 +601,7 @@ static NSArray<NSString *> *GSAObservedLayerKeys(BOOL scrollView)
                         rect,
                         visible,
                         useRegions ? _regions : GSABandsThatCover(_bands, _regions, visible),
-                        _edges,
+                        edgeBits,
                         ignored)];
   if (_ownerId != 0) {
     // Where it's drawn, with its own offset: that's what covers the content beneath it.

@@ -194,7 +194,19 @@ export function useResolvedProps<P extends SafeAreaDefaultsOptions>(
   return resolveSafeAreaProps(props, useContext(SafeAreaDefaultsContext));
 }
 
-const SafeAreaViewInsetsContext = createContext<EdgeInsets>(ZERO_INSETS);
+type SafeAreaViewInsetsContextValue = {
+  insets: EdgeInsets;
+  modes: Readonly<Record<Edge, EdgeMode>>;
+};
+
+const DEFAULT_INSETS_CONTEXT: SafeAreaViewInsetsContextValue = Object.freeze({
+  insets: ZERO_INSETS,
+  modes: edgeModes(undefined),
+});
+
+const SafeAreaViewInsetsContext = createContext<SafeAreaViewInsetsContextValue>(
+  DEFAULT_INSETS_CONTEXT
+);
 SafeAreaViewInsetsContext.displayName = 'SafeAreaViewInsetsContext';
 
 /**
@@ -210,9 +222,51 @@ SafeAreaViewInsetsContext.displayName = 'SafeAreaViewInsetsContext';
  * The view measures its own box, so its insets fit what's around the list: in a sheet only the home indicator, in a
  * tab screen the tab bar and any accessories too. Zero outside a `SafeAreaView`, and for one in `offset` mode, which
  * moves as a whole.
+ *
+ * When the content also has padding of its own, `useSafeAreaViewStyle(styles.content)` combines them for you,
+ * respecting the enclosing view's `gap`, `maximum` and `additive` edges, shorthands (`paddingHorizontal`) and RTL.
  */
 export function useSafeAreaViewInsets(): EdgeInsets {
-  return useContext(SafeAreaViewInsetsContext);
+  return useContext(SafeAreaViewInsetsContext).insets;
+}
+
+export type UseSafeAreaViewStyleOptions = {
+  /**
+   * Edges to apply from the enclosing `SafeAreaView`. Defaults to the enclosing view's own edge modes (including
+   * `'maximum'` from its `gap`). Pass `edges` to pick a subset or override `'additive'` / `'maximum'`.
+   */
+  edges?: Edges;
+  /** Whether to apply the insets as `'padding'` (default) or `'margin'`. */
+  mode?: 'padding' | 'margin';
+};
+
+/**
+ * Combines the nearest `SafeAreaView`'s insets with a component's own `style`, for content that applies the insets
+ * itself — such as a `ScrollView` or `FlatList`'s `contentContainerStyle`:
+ *
+ * ```tsx
+ * <SafeAreaView mode="none" edges={['right', 'bottom']} gap={16} style={{ flex: 1 }}>
+ *   <TripList />
+ * </SafeAreaView>
+ *
+ * function TripList() {
+ *   const safeArea = useSafeAreaViewStyle(styles.content);
+ *   return <FlatList contentContainerStyle={[styles.content, safeArea]} ... />;
+ * }
+ * ```
+ *
+ * Respects the enclosing view's `gap`, `'maximum'` / `'additive'` edge modes, shorthands (`paddingHorizontal`,
+ * `paddingStart`, `paddingEnd`) and right-to-left layouts. Returns `null` when nothing changes.
+ */
+export function useSafeAreaViewStyle(
+  style?: StyleProp<ViewStyle>,
+  options?: UseSafeAreaViewStyleOptions
+): ViewStyle | null {
+  const { insets, modes } = useContext(SafeAreaViewInsetsContext);
+  const mode = options?.mode ?? 'padding';
+  const resolvedModes =
+    options?.edges !== undefined ? edgeModes(options.edges) : modes;
+  return layoutAdjustment(style, insets, mode, resolvedModes, true).style;
 }
 
 export type { SafeAreaDefaultsOptions };
@@ -265,6 +319,7 @@ export type NativeSafeAreaOptions = Pick<
   | 'spacing'
   | 'granular'
   | 'dynamic'
+  | 'avoidScrollingEdges'
   | 'underlying'
   | 'onInsetsChange'
   | 'accessory'
@@ -306,6 +361,7 @@ export function useNativeSafeArea({
   spacing = 0,
   granular = false,
   dynamic = false,
+  avoidScrollingEdges = false,
   underlying = false,
   onInsetsChange,
   accessory,
@@ -394,6 +450,7 @@ export function useNativeSafeArea({
         bands: snapshot.bands,
         granular,
         dynamic,
+        avoidScrollingEdges,
         covers,
         scroll: scroll ?? NO_SCROLL,
         edges: activeEdges(modes),
@@ -418,7 +475,7 @@ export function useNativeSafeArea({
       ref: setRef,
       regions: nativeRegions,
       bands: nativeBands,
-      edges: edgeMask(activeEdges(modes)),
+      edges: edgeMask(activeEdges(modes), avoidScrollingEdges),
       granular,
       dynamic,
       underlying,
@@ -440,6 +497,7 @@ function NativeBackedSafeAreaView({
   spacing,
   granular,
   dynamic,
+  avoidScrollingEdges,
   underlying,
   onInsetsChange,
   accessory,
@@ -456,6 +514,7 @@ function NativeBackedSafeAreaView({
     spacing,
     granular,
     dynamic,
+    avoidScrollingEdges,
     underlying,
     onInsetsChange,
     accessory,
@@ -490,7 +549,10 @@ function NativeBackedSafeAreaView({
       onInsetsChange={handleInsetsChange}
       style={adjustment?.style ? [style, adjustment.style] : style}
     >
-      <ChildInsets insets={reported ? native.insets : ZERO_INSETS}>
+      <ChildInsets
+        insets={reported ? native.insets : ZERO_INSETS}
+        modes={native.modes}
+      >
         {children}
       </ChildInsets>
     </NativeView>
@@ -505,6 +567,7 @@ function MeasuredSafeAreaView({
   spacing,
   granular,
   dynamic = false,
+  avoidScrollingEdges = false,
   underlying = false,
   onInsetsChange,
   accessory,
@@ -526,6 +589,7 @@ function MeasuredSafeAreaView({
     spacing,
     granular,
     dynamic,
+    avoidScrollingEdges,
     underlying,
     scroll,
     style,
@@ -542,7 +606,10 @@ function MeasuredSafeAreaView({
       onLayout={measured.onLayout}
       style={measured.style}
     >
-      <ChildInsets insets={mode === 'offset' ? ZERO_INSETS : measured.insets}>
+      <ChildInsets
+        insets={mode === 'offset' ? ZERO_INSETS : measured.insets}
+        modes={modes}
+      >
         {children}
       </ChildInsets>
     </View>
@@ -551,13 +618,16 @@ function MeasuredSafeAreaView({
 
 export function ChildInsets({
   insets,
+  modes = DEFAULT_INSETS_CONTEXT.modes,
   children,
 }: {
   insets: EdgeInsets;
+  modes?: Readonly<Record<Edge, EdgeMode>>;
   children?: ReactNode;
 }) {
+  const value = useMemo(() => ({ insets, modes }), [insets, modes]);
   return (
-    <SafeAreaViewInsetsContext.Provider value={insets}>
+    <SafeAreaViewInsetsContext.Provider value={value}>
       {children}
     </SafeAreaViewInsetsContext.Provider>
   );
@@ -586,6 +656,7 @@ export type UseSafeAreaStyleOptions = Pick<
   | 'mode'
   | 'granular'
   | 'dynamic'
+  | 'avoidScrollingEdges'
   | 'avoid'
   | 'spacing'
   | 'gap'

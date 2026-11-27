@@ -28,6 +28,8 @@ describe('getDeviceInfo', () => {
         posture: 'folded',
         platform: 'ios',
         hasVerticalBar: true,
+        verticalBarEdge:
+          fixture === fixtures.iPhoneDuoOuterLandscape ? 'left' : 'right',
         hasFold: false,
         isFoldActive: false,
         granularSupported: true,
@@ -43,6 +45,7 @@ describe('getDeviceInfo', () => {
       type: 'foldable',
       posture: 'unfolded',
       hasVerticalBar: false,
+      verticalBarEdge: null,
       hasFold: true,
       isFoldActive: false,
       granularSupported: true,
@@ -57,12 +60,14 @@ describe('getDeviceInfo', () => {
       type: 'foldable',
       posture: 'unfolded',
       hasVerticalBar: true,
+      verticalBarEdge: 'right',
     });
 
     expect(getDeviceInfo(fixtures.iPhoneDuoInnerBookFold)).toMatchObject({
       type: 'foldable',
       posture: 'half-opened',
       hasVerticalBar: false,
+      verticalBarEdge: null,
       hasFold: true,
       isFoldActive: true,
       granularSupported: true,
@@ -72,6 +77,7 @@ describe('getDeviceInfo', () => {
       type: 'foldable',
       posture: 'unfolded',
       hasVerticalBar: false,
+      verticalBarEdge: null,
       hasFold: true,
       isFoldActive: false,
       granularSupported: true,
@@ -91,6 +97,7 @@ describe('getDeviceInfo', () => {
       posture: 'standard',
       platform: 'ios',
       hasVerticalBar: false,
+      verticalBarEdge: null,
       hasFold: false,
       isFoldActive: false,
       granularSupported: true,

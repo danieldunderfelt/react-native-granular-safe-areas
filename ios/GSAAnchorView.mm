@@ -13,20 +13,49 @@
 
 using namespace facebook::react;
 
+static void *GSAAnchorLayerContext = &GSAAnchorLayerContext;
+static void *GSAAnchorScrollContext = &GSAAnchorScrollContext;
+
+/// Layer properties that can move, transform, clip, or hide an ancestor of the anchor.
+static NSArray<NSString *> *GSAAnchorObservedLayerKeys(BOOL scrollView)
+{
+  return scrollView ? @[ @"position", @"transform", @"hidden", @"opacity" ]
+                    : @[ @"position", @"bounds", @"transform", @"hidden", @"opacity" ];
+}
+
 @interface GSAAnchorView () <RCTGranularSafeAreaAnchorViewProtocol, RCTMountingTransactionObserving>
 @end
 
-/// Whether the screen `anchor` is in is showing: in a window, and neither hidden nor fully transparent through any of its
-/// ancestors, which is how a screen can stay mounted while it isn't shown (`opacity: 0`, `display: 'none'`). The
-/// anchor itself is always transparent, so it doesn't count.
+/// Whether the screen `anchor` is in is showing: in a window, neither hidden nor fully transparent through any of its
+/// ancestors (`opacity: 0`, `display: 'none'`), and drawn inside the window and any clipping ancestors (so a screen
+/// slid off screen with `translateY` or collapsed with `scale: 0` stops owning the system back button). During a UIKit
+/// transition the screen still counts as showing and is re-checked once the transition ends.
 static BOOL GSAIsShowing(UIView *anchor)
 {
-  if (anchor.window == nil || anchor.hidden) {
+  UIWindow *window = anchor.window;
+  if (window == nil || anchor.hidden) {
     return NO;
   }
   for (UIView *view = anchor.superview; view != nil; view = view.superview) {
     if (view.hidden || view.layer.hidden || view.layer.opacity < 0.01) {
       return NO;
+    }
+  }
+  if (GSATransitionCoordinator(anchor) != nil) {
+    return YES;
+  }
+  if (!CGRectIsEmpty(anchor.bounds) && !CGRectIsEmpty(window.bounds)) {
+    const CGRect inWindow = [anchor convertRect:anchor.bounds toView:window];
+    if (!CGRectIntersectsRect(inWindow, window.bounds)) {
+      return NO;
+    }
+    for (UIView *view = anchor.superview; view != nil && view != window; view = view.superview) {
+      if (view.clipsToBounds || view.layer.masksToBounds) {
+        const CGRect clip = [view convertRect:view.bounds toView:window];
+        if (!CGRectIntersectsRect(inWindow, clip)) {
+          return NO;
+        }
+      }
     }
   }
   return YES;
@@ -36,6 +65,9 @@ static BOOL GSAIsShowing(UIView *anchor)
   /// What JS currently believes. JS assumes "showing" until told otherwise, so the first frame is already right.
   BOOL _reportedInWindow;
   BOOL _checkScheduled;
+  /// Ancestor views between this anchor and its window whose transform, bounds, opacity, or visibility are observed so
+  /// UI-thread animations (Reanimated, Animated native driver, scrolling) update ownership without a React render.
+  NSArray<UIView *> *_observed;
 
   /// The screen's system back button, shown in the screen's root view so it moves and leaves with the screen.
   UIButton *_Nullable _button;
@@ -79,6 +111,7 @@ static BOOL GSAIsShowing(UIView *anchor)
 
 - (void)dealloc
 {
+  [self stopObserving];
   GSAUnregisterOwner(_ownerId, _button);
   [_button removeFromSuperview];
 }
@@ -106,6 +139,11 @@ static BOOL GSAIsShowing(UIView *anchor)
 - (void)didMoveToWindow
 {
   [super didMoveToWindow];
+  if (self.window != nil) {
+    [self updateObservedAncestors];
+  } else {
+    [self stopObserving];
+  }
   [self reportIfChanged];
   [self layoutButton];
 }
@@ -127,9 +165,67 @@ static BOOL GSAIsShowing(UIView *anchor)
 - (void)mountingTransactionDidMount:(const MountingTransaction &)transaction
                withSurfaceTelemetry:(const SurfaceTelemetry &)surfaceTelemetry
 {
-  // Any transaction can hide or show the screen without moving it: an ancestor's opacity or display changed.
+  // Any transaction can hide, translate, clip, or reparent the screen without moving the anchor itself.
+  if (self.window != nil) {
+    [self updateObservedAncestors];
+  }
   [self reportIfChanged];
   [self layoutButton];
+}
+
+- (void)observeValueForKeyPath:(NSString *)keyPath
+                      ofObject:(id)object
+                        change:(NSDictionary<NSKeyValueChangeKey, id> *)change
+                       context:(void *)context
+{
+  if (context == GSAAnchorLayerContext || context == GSAAnchorScrollContext) {
+    if (GSAIsShowing(self) != _reportedInWindow) {
+      [self scheduleCheck];
+    }
+  } else {
+    [super observeValueForKeyPath:keyPath ofObject:object change:change context:context];
+  }
+}
+
+- (void)updateObservedAncestors
+{
+  UIWindow *window = self.window;
+  if (window == nil) {
+    [self stopObserving];
+    return;
+  }
+  NSMutableArray<UIView *> *chain = [NSMutableArray new];
+  for (UIView *view = self.superview; view != nil && view != window; view = view.superview) {
+    [chain addObject:view];
+  }
+  if ([chain isEqualToArray:_observed ?: @[]]) {
+    return;
+  }
+  [self stopObserving];
+  for (UIView *view in chain) {
+    const BOOL scrollView = [view isKindOfClass:UIScrollView.class];
+    for (NSString *key in GSAAnchorObservedLayerKeys(scrollView)) {
+      [view.layer addObserver:self forKeyPath:key options:0 context:GSAAnchorLayerContext];
+    }
+    if (scrollView) {
+      [view addObserver:self forKeyPath:@"contentOffset" options:0 context:GSAAnchorScrollContext];
+    }
+  }
+  _observed = [chain copy];
+}
+
+- (void)stopObserving
+{
+  for (UIView *view in _observed) {
+    const BOOL scrollView = [view isKindOfClass:UIScrollView.class];
+    for (NSString *key in GSAAnchorObservedLayerKeys(scrollView)) {
+      [view.layer removeObserver:self forKeyPath:key context:GSAAnchorLayerContext];
+    }
+    if (scrollView) {
+      [view removeObserver:self forKeyPath:@"contentOffset" context:GSAAnchorScrollContext];
+    }
+  }
+  _observed = nil;
 }
 
 - (void)scheduleCheck
@@ -150,6 +246,11 @@ static BOOL GSAIsShowing(UIView *anchor)
 
 - (void)reportIfChanged
 {
+  id<UIViewControllerTransitionCoordinator> transition =
+      self.window != nil ? GSATransitionCoordinator(self) : nil;
+  if (transition != nil) {
+    [self placeAfterTransition:transition];
+  }
   BOOL inWindow = GSAIsShowing(self);
   if (inWindow == _reportedInWindow || _eventEmitter == nullptr) {
     return;
@@ -221,11 +322,19 @@ static BOOL GSAIsShowing(UIView *anchor)
                                                __typeof(self) strongSelf = weakSelf;
                                                if (strongSelf != nil) {
                                                  strongSelf->_awaitedTransition = nil;
+                                                 [strongSelf reportIfChanged];
                                                  [strongSelf layoutButton];
                                                }
                                              }];
   if (!waiting) {
     _awaitedTransition = nil;
+    dispatch_async(dispatch_get_main_queue(), ^{
+      __typeof(self) strongSelf = weakSelf;
+      if (strongSelf != nil) {
+        [strongSelf reportIfChanged];
+        [strongSelf layoutButton];
+      }
+    });
   }
 }
 

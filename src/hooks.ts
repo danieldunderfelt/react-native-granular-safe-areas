@@ -136,7 +136,12 @@ export function useSafeAreaInsetsFor(
   const { top, right, bottom, left, width, height } = placement;
   const edgesKey = activeEdges(edgeModes(options.edges)).join(',');
   const avoidKey = (options.avoid ?? DEFAULT_AVOID).join(',');
-  const { spacing = 0, granular = false, scrollable } = options;
+  const {
+    spacing = 0,
+    granular = false,
+    avoidScrollingEdges = false,
+    scrollable,
+  } = options;
 
   const compute = useCallback((): EdgeInsets => {
     const { metrics, regions, bands } = store.getSnapshot();
@@ -149,6 +154,7 @@ export function useSafeAreaInsetsFor(
       regions,
       bands,
       granular,
+      avoidScrollingEdges,
       scroll: {
         vertical: scrollable === 'vertical',
         horizontal: scrollable === 'horizontal',
@@ -170,6 +176,7 @@ export function useSafeAreaInsetsFor(
     avoidKey,
     spacing,
     granular,
+    avoidScrollingEdges,
     scrollable,
   ]);
 
